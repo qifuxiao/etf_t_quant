@@ -164,8 +164,8 @@ class QMTExecutor:
         """订阅行情"""
         if self._trader and self._connected:
             try:
-                # 使用正确的API订阅行情
-                self._trader.subscribe(stock_code, "STOCK")
+                # 尝试不带参数的方式
+                self._trader.subscribe(stock_code)
                 Logger.info(f"已订阅行情 | 标的:{stock_code}")
             except Exception as e:
                 Logger.error(f"订阅行情失败: {e}")
@@ -174,7 +174,7 @@ class QMTExecutor:
         """取消订阅行情"""
         if self._trader and self._connected:
             try:
-                self._trader.unsubscribe(stock_code, "STOCK")
+                self._trader.unsubscribe(stock_code)
                 Logger.info(f"已取消订阅行情 | 标的:{stock_code}")
             except Exception as e:
                 Logger.error(f"取消订阅行情失败: {e}")
