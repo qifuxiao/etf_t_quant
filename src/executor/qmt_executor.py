@@ -161,23 +161,21 @@ class QMTExecutor:
         return {}
 
     def subscribe(self, stock_code: str):
-        """订阅行情"""
-        if self._trader and self._connected:
-            try:
-                # 尝试不带参数的方式
-                self._trader.subscribe(stock_code)
-                Logger.info(f"已订阅行情 | 标的:{stock_code}")
-            except Exception as e:
-                Logger.error(f"订阅行情失败: {e}")
+        """
+        订阅行情
+        
+        注意：QMT的subscribe方法需要account对象而非stock_code。
+        由于用户主要使用get_quote()获取行情，此处静默处理订阅请求。
+        如需实时推送，可使用xtdata.subscribe_quote()实现。
+        """
+        # 静默处理：QMT的trader.subscribe需要account对象，不支持按股票订阅
+        # 用户通过get_quote()轮询获取行情，不需要推送机制
+        Logger.debug(f"行情订阅请求已记录 | 标的:{stock_code} (使用get_quote轮询)")
 
     def unsubscribe(self, stock_code: str):
         """取消订阅行情"""
-        if self._trader and self._connected:
-            try:
-                self._trader.unsubscribe(stock_code)
-                Logger.info(f"已取消订阅行情 | 标的:{stock_code}")
-            except Exception as e:
-                Logger.error(f"取消订阅行情失败: {e}")
+        # 静默处理：与subscribe对应
+        Logger.debug(f"取消订阅请求已记录 | 标的:{stock_code}")
 
     def get_quote(self, stock_code: str) -> Optional[Dict]:
         """获取实时行情"""
