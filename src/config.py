@@ -116,6 +116,16 @@ class Config:
         """QMT重试间隔"""
         return int(self._config.get('qmt', {}).get('retry', {}).get('interval_seconds', 5))
     
+    @property
+    def qmt_path(self) -> str:
+        """QMT路径"""
+        return self._config.get('qmt', {}).get('path', '')
+    
+    @property
+    def session_id(self) -> int:
+        """QMT会话ID"""
+        return int(self._config.get('qmt', {}).get('session_id', 123456))
+    
     # ==================== 交易时间段 ====================
     @property
     def trading_morning_start(self) -> str:
