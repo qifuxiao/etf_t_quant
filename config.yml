@@ -1,0 +1,155 @@
+# ETF T策略量化交易系统配置文件
+# 交易标的：300124（汇川技术）
+# 总资金：200,000元
+
+# ==================== 交易标的配置 ====================
+stock:
+  code: "300124"           # 股票代码
+  name: "汇川技术"          # 股票名称
+
+# ==================== 资金配置 ====================
+capital:
+  total: 200000           # 总资金（元）
+  band_position_ratio: 0.6   # 波段底仓比例60%
+  t_position_fund: 20000    # 做T资金池2万元
+  reserve_ratio: 0.3        # 预留30%
+
+# ==================== QMT配置 ====================
+qmt:
+  account: "55057942"     # QMT账号
+  password: "259800"     # QMT密码
+  path: "D:\\国金QMT交易端模拟\\userdata_mini"  # QMT路径
+  host: "127.0.0.1"       # QMT服务地址
+  port: 5910              # QMT服务端口
+  session_id: 123456      # Session ID
+  timeout: 30             # 超时时间（秒）
+  retry:
+    max_attempts: 3       # 最大重试次数
+    interval_seconds: 5   # 重试间隔（秒）
+
+# ==================== 交易时间段 ====================
+trading:
+  morning_start: "09:30"
+  morning_end: "11:30"
+  afternoon_start: "13:00"
+  afternoon_end: "14:55"   # 开仓截止时间
+  day_end: "15:00"
+
+# ==================== 做T策略参数 ====================
+t_strategy:
+  enabled: true
+  max_fund: 20000                    # 做T最大资金
+  max_ratio: 0.3                      # 每次做T不超过底仓30%
+  trigger_drop: 0.02                 # 跌幅≥2%触发
+  trigger_deviation: 0.003           # 偏离-0.3%（分时均线）
+  profit_target: 0.005               # 止盈0.5%
+  loss_stop: 0.01                    # 止损1.0%
+  max_single_quantity: 1000         # 单次做空T最大数量
+  min_position: 100                  # 最低持仓要求
+  min_fund: 1000                     # 最低资金要求
+  # 分时均线走平判定
+  vwap_flat_slope: 0.001             # 均线斜率阈值
+  vwap_flat_change_rate: 0.001       # 3个5分钟周期变化率<0.1%
+  # 波动率限制
+  amplitude_limit: 0.01             # 5分钟振幅<1%
+  amplitude_duration: 30             # 持续30分钟
+
+# ==================== 波段策略参数 ====================
+band_strategy:
+  enabled: true
+  initial_ratio: 0.6                 # 初始建仓60%
+  max_ratio: 0.8                     # 最大仓位80%
+  min_ratio: 0.3                     # 最小仓位30%
+  # 加仓条件
+  add_ma5_condition:                 # 首次加仓：站上5日均线
+    enabled: true
+    ratio: 0.1                        # +10%
+    ma_level: 5
+    volume_ratio: 1.2                # 量能≥5日均量120%
+  add_ma10_condition:                # 二次加仓：站上10日均线
+    enabled: true
+    ratio: 0.1                        # +10%
+    ma_level: 10
+    price_increase: 0.05            # 涨幅≥5%
+  add_break20_condition:             # 突破加仓：突破20日高点
+    enabled: true
+    ratio: 0.1                        # +10%
+    period: 20
+    volume_ratio: 1.5                # 量能≥20日均量150%
+  # 减仓条件
+  reduce_ma5_condition:              # 破线减仓
+    enabled: true
+    ratio: 0.2                        # -20%
+    ma_level: 5
+  reduce_rise_condition:             # 涨幅减仓
+    enabled: true
+    ratio: 0.2                        # -20%
+    rise_threshold: 0.07             # 单日涨幅≥7%
+    volume_ratio: 2.0                # 量能≥20日均量200%
+  reduce_trend_condition:            # 趋势减仓
+    enabled: true
+    ratio: 0.3                        # -30%
+    ma_level: 10
+    consecutive_days: 3              # 连续3日
+  # 止盈条件
+  profit_target: 0.15                # 目标止盈15%
+  profit_take1:                      # 分批止盈1
+    enabled: true
+    ratio: 0.10                       # 收益率≥10%
+    reduce_ratio: 0.3                # 减仓30%
+  profit_take2:                      # 分批止盈2
+    enabled: true
+    ratio: 0.15                       # 收益率≥15%
+    reduce_ratio: 0.3                # 再减仓30%
+  profit_accelerate:                 # 加速止盈
+    enabled: true
+    rise_threshold: 0.09             # 单日涨幅≥9%
+    reduce_ratio: 0.5                # 减仓50%
+  # 止损条件
+  stop_loss_fixed: 0.05              # 固定止损-5%
+  stop_loss_ma20:                    # 均线止损
+    enabled: true
+    ma_level: 20
+  stop_loss_volume:                  # 放量止损
+    enabled: true
+    drop_threshold: 0.05             # 跌幅≥5%
+    volume_ratio: 2.0                # 量能≥20日均量200%
+  stop_loss_time:                    # 时间止损
+    enabled: true
+    holding_days: 30                 # 持仓30日
+    profit_threshold: 0              # 收益≤0%
+
+# ==================== 风控参数 ====================
+risk:
+  # 市场环境限制
+  market_drop_limit: 0.05            # 大盘跌5%禁止开仓
+  sector_drop_limit: 0.06           # 板块跌6%禁止开仓
+  # 连续亏损熔断
+  t_continuous_loss_limit: 3        # 做T连续亏损3次熔断
+  t_circuit_duration: 1             # 做T熔断持续1天
+  band_continuous_loss_limit: 2     # 波段连续亏损2次熔断
+  band_circuit_duration: 3           # 波段熔断持续3天
+  # 波动率限制
+  t_amplitude_limit: 0.01           # 5分钟振幅<1%
+  t_amplitude_duration: 30          # 持续30分钟
+  band_volatility_limit: 0.02       # 20日波动率<2%
+  # 涨跌停限制
+  limit_up_block: true               # 涨停禁止做空T
+  limit_down_block: true            # 跌停禁止做多T
+
+# ==================== 日志配置 ====================
+logging:
+  level: "INFO"                      # 日志级别
+  dir: "logs"                        # 日志目录
+  rotation: "00:00"                  # 每天00:00分割
+  retention: "30 days"             # 保留30天
+  format: "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
+  # 日志文件
+  trade_log: "trade_{time}.log"     # 交易日志
+  error_log: "error_{time}.log"     # 错误日志
+
+# ==================== 状态持久化配置 ====================
+state:
+  dir: "data"                        # 状态文件目录
+  file: "state.json"                 # 状态文件
+  auto_save_interval: 60            # 自动保存间隔（秒）
