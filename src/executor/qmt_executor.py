@@ -56,8 +56,10 @@ class QMTExecutor:
             from xtquant.xttype import StockAccount
 
             # 获取QMT路径
-            qmt_path = getattr(self.config, 'qmt_path', None) or getattr(self.config, 'qmt', {}).get('path', '')
-            session_id = getattr(self.config, 'session_id', 123456)
+            qmt_path = self.config.qmt_path if hasattr(self.config, 'qmt_path') and self.config.qmt_path else ''
+            session_id = self.config.session_id if hasattr(self.config, 'session_id') else 123456
+
+            Logger.info(f"qmt_path={repr(qmt_path)}")
 
             # 创建QMT交易对象
             self._qmt = XtQuantTrader(qmt_path, session_id)
