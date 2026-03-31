@@ -230,7 +230,7 @@ class QMTExecutor:
             )
             
             if qmt_code in data and len(data[qmt_code]) > 0:
-                tick = data[stock_code][0]
+                tick = data[qmt_code][0]
                 return {
                     "stock_code": stock_code,
                     "last_price": float(tick.get("lastPrice", 0)),

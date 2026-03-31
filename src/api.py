@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from src.config import Config
     from src.market_data import MarketModule, QuoteData, VWAPData, MinuteData
-    from src.executor.qmt_executor import QMTExecutor
+    from src.executor.qmt_executor import QMTExecutor, format_stock_code
     from src.strategy.signal import SignalType
     from src.state.state_manager import StateManager
 except ImportError as e:
@@ -39,6 +39,7 @@ except ImportError as e:
     Config = None
     MarketModule = None
     QMTExecutor = None
+    format_stock_code = None
 
 
 # ==================== 数据模型 ====================
@@ -201,8 +202,11 @@ async def get_realtime(
     qmt, market_module, state_manager, config = qmt_tuple
     
     try:
+        # 格式化股票代码 (如 300124 -> SZ.300124)
+        qmt_code = format_stock_code(code) if format_stock_code else code
+        
         # 获取实时行情
-        quote = market_module.get_quote(code) if market_module else None
+        quote = market_module.get_quote(qmt_code) if market_module else None
         
         if not quote:
             raise HTTPException(status_code=404, detail=f"无法获取股票 {code} 的行情数据")
@@ -213,7 +217,7 @@ async def get_realtime(
             # 通过 market_module 获取分时数据
             today = datetime.now().strftime("%Y%m%d")
             try:
-                minute_list = qmt.get_minute_data(code, today) if qmt else []
+                minute_list = qmt.get_minute_data(qmt_code, today) if qmt else []
                 for m in minute_list:
                     minute_data.append(MinuteBar(
                         time=m.get('time', ''),
@@ -263,6 +267,9 @@ async def get_history(
     qmt, market_module, state_manager, config = qmt_tuple
     
     try:
+        # 格式化股票代码 (如 300124 -> SZ.300124)
+        qmt_code = format_stock_code(code) if format_stock_code else code
+        
         # 转换日期格式
         date_str = date.replace("-", "")
         
@@ -270,7 +277,7 @@ async def get_history(
         minute_data = []
         if qmt:
             try:
-                minute_list = qmt.get_minute_data(code, date_str)
+                minute_list = qmt.get_minute_data(qmt_code, date_str)
                 for m in minute_list:
                     minute_data.append(MinuteBar(
                         time=m.get('time', ''),
@@ -377,8 +384,11 @@ async def get_stock(
     qmt, market_module, state_manager, config = qmt_tuple
     
     try:
+        # 格式化股票代码 (如 300124 -> SZ.300124)
+        qmt_code = format_stock_code(code) if format_stock_code else code
+        
         # 获取实时行情
-        quote = market_module.get_quote(code) if market_module else None
+        quote = market_module.get_quote(qmt_code) if market_module else None
         
         if not quote:
             raise HTTPException(status_code=404, detail=f"无法获取股票 {code} 的信息")
@@ -398,6 +408,86 @@ async def get_stock(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取股票信息失败: {str(e)}")
+
+
+class DatesResponse(BaseModel):
+    """可用日期列表响应"""
+    code: int = 0
+    message: str = "success"
+    data: List[str] = []
+
+
+@app.get("/api/dates", response_model=DatesResponse)
+async def get_dates(
+    code: str = Query(..., description="股票代码，如 300124"),
+    qmt_tuple = Depends(get_qmt_connection)
+):
+    """
+    获取可回测的交易日列表
+    
+    Args:
+        code: 股票代码
+        
+    Returns:
+        最近30个交易日的日期列表
+    """
+    qmt, market_module, state_manager, config = qmt_tuple
+    
+    try:
+        # 格式化股票代码
+        qmt_code = format_stock_code(code) if format_stock_code else code
+        
+        # 获取最近30个交易日
+        trading_dates = []
+        
+        if qmt:
+            try:
+                # 计算日期范围
+                from datetime import datetime, timedelta
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=45)  # 多获取一些日期，过滤周末
+                
+                # 获取K线数据来获取交易日
+                kline_list = qmt.get_kline(
+                    qmt_code,
+                    start_date.strftime("%Y%m%d"),
+                    end_date.strftime("%Y%m%d")
+                )
+                
+                if kline_list:
+                    # 提取日期并转换为 YYYY-MM-DD 格式
+                    for k in kline_list:
+                        date_str = k.get('date', '')
+                        if date_str:
+                            # 转换为 YYYY-MM-DD 格式
+                            if len(date_str) == 8:
+                                formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+                                trading_dates.append(formatted_date)
+                    
+                    # 取最近30个
+                    trading_dates = trading_dates[:30]
+                    
+            except Exception as e:
+                print(f"获取交易日失败: {e}")
+        
+        # 如果没有获取到日期，使用本地计算的默认日期
+        if not trading_dates:
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            for i in range(30):
+                d = today - timedelta(days=i)
+                day = d.weekday()
+                if day < 5:  # 排除周末
+                    trading_dates.append(d.strftime("%Y-%m-%d"))
+        
+        return DatesResponse(
+            code=0,
+            message="success",
+            data=trading_dates
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取交易日失败: {str(e)}")
 
 
 # ==================== 启动入口 ====================

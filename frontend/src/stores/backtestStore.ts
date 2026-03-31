@@ -6,6 +6,7 @@ interface BacktestState {
   data: BacktestData | null;
   selectedDate: string;
   availableDates: string[];
+  datesCache: Record<string, string[]>;  // 日期缓存
   error: string | null;
   
   // 播放控制
@@ -22,7 +23,7 @@ interface BacktestState {
   seek: (index: number) => void;
   stepForward: () => void;
   stepBackward: () => void;
-  fetchAvailableDates: () => Promise<void>;
+  fetchAvailableDates: (code?: string) => Promise<void>;
 }
 
 // API 地址
@@ -35,6 +36,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   data: null,
   selectedDate: new Date().toISOString().split('T')[0],
   availableDates: [],
+  datesCache: {},
   error: null,
   
   playback: {
@@ -44,14 +46,26 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
     totalPoints: 0
   },
   
-  fetchAvailableDates: async () => {
+  fetchAvailableDates: async (code = DEFAULT_CODE) => {
+    const { datesCache } = get();
+    
+    // 检查缓存
+    if (datesCache[code] && datesCache[code].length > 0) {
+      set({ availableDates: datesCache[code] });
+      return;
+    }
+    
     try {
       // 从后端获取可用日期
-      const res = await fetch(`${API_BASE}/api/dates?code=${DEFAULT_CODE}`);
+      const res = await fetch(`${API_BASE}/api/dates?code=${code}`);
       const data = await res.json();
       
-      if (data.code === 0 && data.data) {
-        set({ availableDates: data.data });
+      if (data.code === 0 && data.data && data.data.length > 0) {
+        // 更新缓存
+        set({
+          availableDates: data.data,
+          datesCache: { ...datesCache, [code]: data.data }
+        });
       } else {
         // 如果没有日期接口，使用默认日期列表
         const today = new Date();
@@ -64,7 +78,10 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
             dates.push(d.toISOString().split('T')[0]);
           }
         }
-        set({ availableDates: dates });
+        set({ 
+          availableDates: dates,
+          datesCache: { ...datesCache, [code]: dates }
+        });
       }
     } catch (error) {
       console.error('获取可用日期失败:', error);
@@ -79,12 +96,16 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
           dates.push(d.toISOString().split('T')[0]);
         }
       }
-      set({ availableDates: dates });
+      set({ 
+        availableDates: dates,
+        datesCache: { ...datesCache, [code]: dates }
+      });
     }
   },
   
   setDate: (date) => {
     set({ selectedDate: date });
+    // 选择日期后自动加载数据
     get().loadData(date);
   },
   
