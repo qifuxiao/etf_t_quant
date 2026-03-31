@@ -16,8 +16,8 @@ capital:
 
 # ==================== QMT配置 ====================
 qmt:
-  account: "55057942"     # QMT账号
-  password: "259800"     # QMT密码
+  account: "8881517461"     # QMT账号
+  password: "987430"     # QMT密码
   path: "D:/国金QMT交易端模拟/userdata_mini"  # QMT路径
   host: "127.0.0.1"       # QMT服务地址
   port: 5910              # QMT服务端口
