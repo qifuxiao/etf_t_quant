@@ -21,6 +21,9 @@ interface RealtimeState {
   refresh: () => void;
 }
 
+// 演示数据标识 - 当前使用模拟数据，非真实交易数据
+const IS_DEMO_MODE = true;
+
 // 模拟生成实时数据
 const generateMockRealtimeData = (): RealtimeData => {
   const basePrice = 3.45;
@@ -72,8 +75,8 @@ const generateMockRealtimeData = (): RealtimeData => {
     signals,
     triggers,
     stockInfo: {
-      code: '511880',
-      name: '上证ETF',
+      code: '300124',
+      name: '汇川技术',
       currentPrice,
       change: parseFloat((currentPrice - basePrice).toFixed(3)),
       changePercent: parseFloat(((currentPrice - basePrice) / basePrice * 100).toFixed(2))

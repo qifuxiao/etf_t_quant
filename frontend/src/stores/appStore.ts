@@ -29,8 +29,8 @@ export const useAppStore = create<AppState>((set) => ({
   },
   
   selectedStock: {
-    code: '511880',
-    name: '上证ETF'
+    code: '300124',
+    name: '汇川技术'
   },
   
   setViewMode: (mode) => set({ viewMode: mode }),

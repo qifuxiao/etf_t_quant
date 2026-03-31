@@ -23,6 +23,9 @@ interface BacktestState {
   stepBackward: () => void;
 }
 
+// 演示数据标识 - 当前使用模拟数据，非真实交易数据
+const IS_DEMO_MODE = true;
+
 // 生成模拟回测数据
 const generateMockBacktestData = (date: string): BacktestData => {
   const basePrice = 3.45;
