@@ -13,6 +13,37 @@ from src.strategy.signal import Order, OrderStatus, TradingSignal
 from src.log.logger import Logger
 
 
+def format_stock_code(stock_code: str) -> str:
+    """
+    将股票代码转换为QMT/xtquant需要的格式
+    
+    Args:
+        stock_code: 股票代码，支持以下格式：
+            - "300124" -> "SZ.300124"
+            - "600000" -> "SH.600000" 
+            - "SZ.300124" -> "SZ.300124" (已正确格式直接返回)
+            - "SH.600000" -> "SH.600000"
+    
+    Returns:
+        格式化后的股票代码，如 "SZ.300124"
+    """
+    if not stock_code:
+        return stock_code
+    
+    # 如果已经是正确格式，直接返回
+    if '.' in stock_code:
+        return stock_code
+    
+    # 根据股票代码前缀判断市场
+    # 6开头：上海证券交易所 (SH)
+    # 0/3开头：深圳证券交易所 (SZ)
+    if stock_code.startswith('6'):
+        return f"SH.{stock_code}"
+    else:
+        # 0开头、3开头、8开头（北交所）、4开头（科创板）都是深圳
+        return f"SZ.{stock_code}"
+
+
 class QMTExecutor:
     """QMT执行引擎"""
 
@@ -183,19 +214,22 @@ class QMTExecutor:
             # 使用 xtdata 获取实时行情
             import xtquant.xtdata as xtdata
             
+            # 转换为QMT格式 (如 300124 -> SZ.300124)
+            qmt_code = format_stock_code(stock_code)
+            
             # 订阅行情
-            xtdata.subscribe_quote(stock_code)
+            xtdata.subscribe_quote(qmt_code)
             
             # 获取最新行情
             data = xtdata.get_market_data(
                 field_list=["lastPrice", "open", "high", "low", "volume", "amount", 
                            "change", "priceChange", "bid", "ask", "updateTime"],
-                stock_list=[stock_code],
+                stock_list=[qmt_code],
                 period="tick",
                 count=1
             )
             
-            if stock_code in data and len(data[stock_code]) > 0:
+            if qmt_code in data and len(data[qmt_code]) > 0:
                 tick = data[stock_code][0]
                 return {
                     "stock_code": stock_code,
@@ -328,6 +362,9 @@ class QMTExecutor:
             # 使用 xtdata 获取分时数据
             import xtquant.xtdata as xtdata
             
+            # 转换为QMT格式 (如 300124 -> SZ.300124)
+            qmt_code = format_stock_code(stock_code)
+            
             # 转换日期格式
             if len(date) == 8:
                 # date 格式为 YYYYMMDD
@@ -341,7 +378,7 @@ class QMTExecutor:
             # 获取1分钟K线数据
             data = xtdata.get_market_data(
                 field_list=["time", "open", "high", "low", "close", "volume", "amount"],
-                stock_list=[stock_code],
+                stock_list=[qmt_code],
                 period="1m",
                 start_time=start_time,
                 end_time=end_time,
@@ -400,3 +437,66 @@ class QMTExecutor:
                 Logger.error(f"查询订单失败: {e}")
 
         return None
+
+    def get_kline(self, stock_code: str, start_date: str, end_date: str) -> List[Dict]:
+        """
+        获取K线数据
+        
+        Args:
+            stock_code: 股票代码
+            start_date: 开始日期，格式 YYYYMMDD
+            end_date: 结束日期，格式 YYYYMMDD
+            
+        Returns:
+            K线数据列表
+        """
+        try:
+            import xtquant.xtdata as xtdata
+            
+            # 转换为QMT格式 (如 300124 -> SZ.300124)
+            qmt_code = format_stock_code(stock_code)
+            
+            # 获取日K线数据
+            data = xtdata.get_market_data(
+                field_list=["date", "open", "high", "low", "close", "volume", "amount"],
+                stock_list=[qmt_code],
+                period="1d",
+                start_time=start_date,
+                end_time=end_date,
+                count=-1
+            )
+            
+            if "date" in data:
+                dates = data["date"]
+                opens = data.get("open", [])
+                highs = data.get("high", [])
+                lows = data.get("low", [])
+                closes = data.get("close", [])
+                volumes = data.get("volume", [])
+                amounts = data.get("amount", [])
+                
+                result = []
+                for i in range(len(dates)):
+                    # 转换日期格式
+                    try:
+                        ts = dates[i] / 1000  # 毫秒转秒
+                        dt = datetime.fromtimestamp(ts)
+                        date_str = dt.strftime("%Y%m%d")
+                    except:
+                        date_str = str(dates[i])
+                    
+                    result.append({
+                        "date": date_str,
+                        "open": float(opens[i]) if i < len(opens) else 0,
+                        "high": float(highs[i]) if i < len(highs) else 0,
+                        "low": float(lows[i]) if i < len(lows) else 0,
+                        "close": float(closes[i]) if i < len(closes) else 0,
+                        "volume": int(volumes[i]) if i < len(volumes) else 0,
+                        "amount": float(amounts[i]) if i < len(amounts) else 0
+                    })
+                return result
+                
+        except Exception as e:
+            Logger.error(f"获取K线数据失败: {e}")
+            
+        return []
