@@ -1,0 +1,187 @@
+.realtime {
+  padding: 16px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 16px;
+}
+
+.realtime-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.stock-info {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.stock-code {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.stock-name {
+  font-size: 14px;
+  color: #999;
+}
+
+.price-info {
+  text-align: right;
+}
+
+.current-price {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.current-price.up {
+  color: #EE6666;
+}
+
+.current-price.down {
+  color: #91CC75;
+}
+
+.price-change {
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.price-change.up {
+  color: #EE6666;
+}
+
+.price-change.down {
+  color: #91CC75;
+}
+
+.change-icon {
+  font-size: 10px;
+}
+
+.status-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.trading {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.status-badge.break {
+  background: #FFF7E6;
+  color: #FA8C16;
+}
+
+.status-badge.closed {
+  background: #F5F5F5;
+  color: #999;
+}
+
+.connect-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #999;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #999;
+}
+
+.status-dot.connected {
+  background: #52C41A;
+}
+
+.realtime-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.auto-refresh-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #666;
+  cursor: pointer;
+}
+
+.auto-refresh-toggle input {
+  cursor: pointer;
+}
+
+.refresh-btn {
+  padding: 6px 16px;
+  border: 1px solid #5470C6;
+  border-radius: 4px;
+  background: white;
+  color: #5470C6;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: #5470C6;
+  color: white;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.last-update {
+  font-size: 12px;
+  color: #999;
+}
+
+.realtime-stats {
+  display: flex;
+  justify-content: space-around;
+  padding-top: 12px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #999;
+}
+
+.stat-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
