@@ -6,6 +6,7 @@ interface RealtimeState {
   data: RealtimeData;
   isConnected: boolean;
   lastUpdate: string | null;
+  error: string | null;
   
   // WebSocket
   connect: () => void;
@@ -18,71 +19,14 @@ interface RealtimeState {
   // 刷新控制
   autoRefresh: boolean;
   setAutoRefresh: (enabled: boolean) => void;
-  refresh: () => void;
+  refresh: () => Promise<void>;
 }
 
-// 演示数据标识 - 当前使用模拟数据，非真实交易数据
-const IS_DEMO_MODE = true;
+// API 地址
+const API_BASE = 'http://localhost:8080';
 
-// 模拟生成实时数据
-const generateMockRealtimeData = (): RealtimeData => {
-  const basePrice = 3.45;
-  const timeSeries: TimeSeriesPoint[] = [];
-  const signals: TradeSignal[] = [];
-  const triggers: TriggerCondition[] = [];
-  
-  // 生成当天的分时数据（简化模拟）
-  const hours = ['09:30', '09:35', '09:40', '09:45', '09:50', '09:55', '10:00', '10:05', '10:10', '10:15', '10:20', '10:25', '10:30', '10:35', '10:40', '10:45', '10:50', '10:55', '11:00', '11:05', '11:10', '11:15', '11:20', '11:25', '11:30'];
-  
-  let price = basePrice;
-  let sumPrice = 0;
-  let count = 0;
-  
-  hours.forEach((time) => {
-    const change = (Math.random() - 0.5) * 0.02;
-    price = Math.max(3.30, Math.min(3.60, price + change));
-    const volume = Math.floor(Math.random() * 10000000) + 5000000;
-    
-    sumPrice += price;
-    count++;
-    
-    timeSeries.push({
-      time,
-      price: parseFloat(price.toFixed(3)),
-      volume,
-      avgPrice: parseFloat((sumPrice / count).toFixed(3))
-    });
-  });
-  
-  // 添加一些模拟信号
-  signals.push(
-    { id: '1', time: '09:45', price: 3.42, type: 'buy', reason: '金叉买入' },
-    { id: '2', time: '10:30', price: 3.48, type: 'sell', reason: '止盈卖出' },
-    { id: '3', time: '11:00', price: 3.44, type: 'buy', reason: '做T买入' }
-  );
-  
-  // 触发条件
-  triggers.push(
-    { id: '1', type: 'stop_loss', price: 3.38, time: '11:30', active: true },
-    { id: '2', type: 'take_profit', price: 3.52, time: '11:30', active: true },
-    { id: '3', type: 't_strategy', price: 3.46, time: '11:30', active: false }
-  );
-  
-  const currentPrice = timeSeries[timeSeries.length - 1]?.price || basePrice;
-  
-  return {
-    timeSeries,
-    signals,
-    triggers,
-    stockInfo: {
-      code: '300124',
-      name: '汇川技术',
-      currentPrice,
-      change: parseFloat((currentPrice - basePrice).toFixed(3)),
-      changePercent: parseFloat(((currentPrice - basePrice) / basePrice * 100).toFixed(2))
-    }
-  };
-};
+// 默认股票代码
+const DEFAULT_CODE = '300124';
 
 export const useRealtimeStore = create<RealtimeState>((set, get) => ({
   data: {
@@ -93,17 +37,55 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
   },
   isConnected: false,
   lastUpdate: null,
+  error: null,
   autoRefresh: true,
   
-  connect: () => {
-    // 模拟 WebSocket 连接
-    set({ isConnected: true });
-    // 初始化数据
-    const mockData = generateMockRealtimeData();
-    set({ 
-      data: mockData, 
-      lastUpdate: new Date().toISOString() 
-    });
+  connect: async () => {
+    set({ isConnected: true, error: null });
+    
+    try {
+      // 并行请求实时数据、信号和股票信息
+      const [realtimeRes, signalsRes, stockRes] = await Promise.all([
+        fetch(`${API_BASE}/api/realtime?code=${DEFAULT_CODE}`),
+        fetch(`${API_BASE}/api/signals?code=${DEFAULT_CODE}`),
+        fetch(`${API_BASE}/api/stock?code=${DEFAULT_CODE}`)
+      ]);
+      
+      const [realtimeData, signalsData, stockData] = await Promise.all([
+        realtimeRes.json(),
+        signalsRes.json(),
+        stockRes.json()
+      ]);
+      
+      // 处理实时数据响应
+      let timeSeries: TimeSeriesPoint[] = [];
+      let triggers: TriggerCondition[] = [];
+      
+      if (realtimeData.code === 0 && realtimeData.data) {
+        timeSeries = realtimeData.data.timeSeries || [];
+        triggers = realtimeData.data.triggers || [];
+      }
+      
+      // 处理信号响应
+      let signals: TradeSignal[] = [];
+      if (signalsData.code === 0 && signalsData.data) {
+        signals = signalsData.data;
+      }
+      
+      // 处理股票信息响应
+      let stockInfo: StockInfo = { code: DEFAULT_CODE, name: '', currentPrice: 0, change: 0, changePercent: 0 };
+      if (stockData.code === 0 && stockData.data) {
+        stockInfo = stockData.data;
+      }
+      
+      set({ 
+        data: { timeSeries, signals, triggers, stockInfo },
+        lastUpdate: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('获取实时数据失败:', error);
+      set({ error: '连接服务器失败，请检查后端服务是否运行' });
+    }
   },
   
   disconnect: () => {
@@ -150,36 +132,44 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
     set({ autoRefresh: enabled });
   },
   
-  refresh: () => {
-    // 模拟刷新 - 添加新数据点
+  refresh: async () => {
     const state = get();
-    if (state.data.timeSeries.length > 0) {
-      const lastPoint = state.data.timeSeries[state.data.timeSeries.length - 1];
-      const lastTime = lastPoint.time;
-      const [hour, min] = lastTime.split(':').map(Number);
-      const newMin = min + 5;
-      const newHour = newMin >= 60 ? hour + 1 : hour;
-      const newMinStr = newMin >= 60 ? '00' : String(newMin).padStart(2, '0');
-      const newTime = `${String(newHour).padStart(2, '0')}:${newMinStr}`;
+    
+    try {
+      // 刷新实时数据
+      const [realtimeRes, stockRes] = await Promise.all([
+        fetch(`${API_BASE}/api/realtime?code=${DEFAULT_CODE}`),
+        fetch(`${API_BASE}/api/stock?code=${DEFAULT_CODE}`)
+      ]);
       
-      if (newHour > 11 && newHour < 13) return; // 午休时间不更新
+      const [realtimeData, stockData] = await Promise.all([
+        realtimeRes.json(),
+        stockRes.json()
+      ]);
       
-      const change = (Math.random() - 0.5) * 0.02;
-      const newPrice = Math.max(3.30, Math.min(3.60, lastPoint.price + change));
-      const volume = Math.floor(Math.random() * 10000000) + 5000000;
+      if (realtimeData.code === 0 && realtimeData.data) {
+        set((state) => ({
+          data: {
+            ...state.data,
+            timeSeries: realtimeData.data.timeSeries || state.data.timeSeries,
+            triggers: realtimeData.data.triggers || state.data.triggers
+          },
+          lastUpdate: new Date().toISOString()
+        }));
+      }
       
-      state.addPoint({
-        time: newTime,
-        price: parseFloat(newPrice.toFixed(3)),
-        volume,
-        avgPrice: parseFloat(((lastPoint.avgPrice! * state.data.timeSeries.length + newPrice) / (state.data.timeSeries.length + 1)).toFixed(3))
-      });
-      
-      state.updateStockInfo({
-        currentPrice: parseFloat(newPrice.toFixed(3)),
-        change: parseFloat((newPrice - 3.45).toFixed(3)),
-        changePercent: parseFloat(((newPrice - 3.45) / 3.45 * 100).toFixed(2))
-      });
+      if (stockData.code === 0 && stockData.data) {
+        set((state) => ({
+          data: {
+            ...state.data,
+            stockInfo: stockData.data
+          },
+          lastUpdate: new Date().toISOString()
+        }));
+      }
+    } catch (error) {
+      console.error('刷新数据失败:', error);
+      set({ error: '刷新数据失败' });
     }
   }
 }));

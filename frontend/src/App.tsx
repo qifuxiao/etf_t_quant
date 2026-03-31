@@ -9,13 +9,15 @@ import { DatePicker, Settings } from './components/Common';
 import type { TimeSeriesPoint } from './types';
 import './App.css';
 
-// 演示数据标识 - 从 store 导入
-const IS_DEMO_MODE = true;
-
 function App() {
   const { viewMode } = useAppStore();
-  const { data, playback } = useBacktestStore();
+  const { data, playback, fetchAvailableDates, error } = useBacktestStore();
   const intervalRef = useRef<number | null>(null);
+  
+  // 初始化：获取可用日期
+  useEffect(() => {
+    fetchAvailableDates();
+  }, [fetchAvailableDates]);
   
   // 回测播放循环
   useEffect(() => {
@@ -94,6 +96,10 @@ function App() {
               currentIndex={viewMode === 'backtest' ? playback.currentIndex : undefined}
             />
           </div>
+          
+          {error && (
+            <div className="error-message">{error}</div>
+          )}
         </div>
         
         <aside className="sidebar">
@@ -103,9 +109,6 @@ function App() {
       
       <footer className="app-footer">
         <span>© 2024 ETF T+0 量化交易系统</span>
-        {IS_DEMO_MODE && (
-          <span className="demo-warning">⚠️ 演示数据，非真实交易数据</span>
-        )}
       </footer>
     </div>
   );
