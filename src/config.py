@@ -88,7 +88,12 @@ class Config:
     
     @property
     def qmt_password(self) -> str:
-        """QMT密码"""
+        """QMT密码（优先从环境变量读取）"""
+        # 优先从环境变量读取
+        env_password = os.environ.get('QMT_PASSWORD')
+        if env_password:
+            return env_password
+        # 回退到配置文件
         return self._config.get('qmt', {}).get('password', '')
     
     @property

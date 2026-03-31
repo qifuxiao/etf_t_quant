@@ -27,3 +27,6 @@ Thumbs.db
 # Data
 data/*.json
 xtquant
+
+# Environment
+.env
