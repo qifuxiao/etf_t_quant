@@ -49,6 +49,48 @@ class StateManager:
         
         Logger.info("状态管理器初始化完成")
         
+    # ==================== 公共接口 ====================
+    
+    def load(self):
+        """加载状态（公共接口）"""
+        self._load_state()
+        
+    def get_state(self) -> Dict:
+        """获取完整状态（公共接口）"""
+        return {
+            't_position': {
+                'has_long_position': self._t_position.has_long_position,
+                'long_buy_price': self._t_position.long_buy_price,
+                'long_buy_time': self._t_position.long_buy_time,
+                'long_quantity': self._t_position.long_quantity,
+                'long_order_id': self._t_position.long_order_id,
+                'has_short_position': self._t_position.has_short_position,
+                'short_sell_price': self._t_position.short_sell_price,
+                'short_sell_time': self._t_position.short_sell_time,
+                'short_quantity': self._t_position.short_quantity,
+                'short_order_id': self._t_position.short_order_id,
+                'total_t_count': self._t_position.total_t_count,
+                'success_count': self._t_position.success_count,
+                'fail_count': self._t_position.fail_count,
+                'continuous_loss': self._t_position.continuous_loss,
+                'total_profit': self._t_position.total_profit,
+                'last_t_date': self._t_position.last_t_date
+            },
+            'band_position': {
+                'has_position': self._band_position.has_position,
+                'quantity': self._band_position.quantity,
+                'avg_cost': self._band_position.avg_cost,
+                'position_ratio': self._band_position.position_ratio,
+                'entry_date': getattr(self._band_position, 'entry_date', ''),
+                'holding_days': getattr(self._band_position, 'holding_days', 0),
+                'add_records': self._band_add_records,
+                'reduce_records': self._band_reduce_records,
+                'stats': self._band_stats
+            },
+            'trade_history': self._band_add_records + self._band_reduce_records,
+            'orders': self._orders
+        }
+        
     # ==================== 加载/保存 ====================
     
     def _load_state(self):

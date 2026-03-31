@@ -179,27 +179,41 @@ class QMTExecutor:
 
     def get_quote(self, stock_code: str) -> Optional[Dict]:
         """获取实时行情"""
-        if self._trader and self._connected:
-            try:
-                quote = self._trader.get_quote(stock_code)
-                if quote:
-                    return {
-                        "stock_code": stock_code,
-                        "last_price": quote.last_price,
-                        "open": quote.open,
-                        "high": quote.high,
-                        "low": quote.low,
-                        "volume": quote.volume,
-                        "amount": quote.amount,
-                        "change": quote.change,
-                        "change_pct": quote.change_pct,
-                        "bid": quote.bid,
-                        "ask": quote.ask,
-                        "update_time": quote.update_time
-                    }
-            except Exception as e:
-                Logger.error(f"获取行情失败: {e}")
-
+        try:
+            # 使用 xtdata 获取实时行情
+            import xtquant.xtdata as xtdata
+            
+            # 订阅行情
+            xtdata.subscribe_quote(stock_code)
+            
+            # 获取最新行情
+            data = xtdata.get_market_data(
+                field_list=["lastPrice", "open", "high", "low", "volume", "amount", 
+                           "change", "priceChange", "bid", "ask", "updateTime"],
+                stock_list=[stock_code],
+                period="tick",
+                count=1
+            )
+            
+            if stock_code in data and len(data[stock_code]) > 0:
+                tick = data[stock_code][0]
+                return {
+                    "stock_code": stock_code,
+                    "last_price": float(tick.get("lastPrice", 0)),
+                    "open": float(tick.get("open", 0)),
+                    "high": float(tick.get("high", 0)),
+                    "low": float(tick.get("low", 0)),
+                    "volume": int(tick.get("volume", 0)),
+                    "amount": float(tick.get("amount", 0)),
+                    "change": float(tick.get("priceChange", 0)),
+                    "change_pct": float(tick.get("change", 0)) / 100 if tick.get("change") else 0,
+                    "bid": tick.get("bid", []),
+                    "ask": tick.get("ask", []),
+                    "update_time": tick.get("updateTime", "")
+                }
+        except Exception as e:
+            Logger.error(f"获取行情失败: {e}")
+            
         return None
 
     # ========================
@@ -310,21 +324,61 @@ class QMTExecutor:
     # ========================
     def get_minute_data(self, stock_code: str, date: str) -> List[Dict]:
         """获取分时数据（兼容）"""
-        if self._trader and self._connected:
-            try:
-                minute_data = self._trader.get_minute_data(stock_code, date)
-                return [
-                    {
-                        "time": m.time,
-                        "price": m.price,
-                        "volume": m.volume,
-                        "amount": m.amount
-                    }
-                    for m in minute_data
-                ]
-            except Exception as e:
-                Logger.error(f"获取分时数据失败: {e}")
-
+        try:
+            # 使用 xtdata 获取分时数据
+            import xtquant.xtdata as xtdata
+            
+            # 转换日期格式
+            if len(date) == 8:
+                # date 格式为 YYYYMMDD
+                start_time = date + "093000"
+                end_time = date + "150000"
+            else:
+                # 尝试直接使用
+                start_time = date
+                end_time = date
+            
+            # 获取1分钟K线数据
+            data = xtdata.get_market_data(
+                field_list=["time", "open", "high", "low", "close", "volume", "amount"],
+                stock_list=[stock_code],
+                period="1m",
+                start_time=start_time,
+                end_time=end_time,
+                count=-1
+            )
+            
+            if "time" in data:
+                times = data["time"]
+                opens = data.get("open", [])
+                highs = data.get("high", [])
+                lows = data.get("low", [])
+                closes = data.get("close", [])
+                volumes = data.get("volume", [])
+                amounts = data.get("amount", [])
+                
+                result = []
+                for i in range(len(times)):
+                    # 转换时间戳
+                    import datetime
+                    try:
+                        ts = times[i] / 1000  # 毫秒转秒
+                        dt = datetime.datetime.fromtimestamp(ts)
+                        time_str = dt.strftime("%H:%M:%S")
+                    except:
+                        time_str = str(times[i])
+                    
+                    result.append({
+                        "time": time_str,
+                        "price": float(closes[i]) if i < len(closes) else 0,
+                        "volume": int(volumes[i]) if i < len(volumes) else 0,
+                        "amount": float(amounts[i]) if i < len(amounts) else 0
+                    })
+                return result
+                
+        except Exception as e:
+            Logger.error(f"获取分时数据失败: {e}")
+            
         return []
 
     def get_order(self, order_id: str) -> Optional[Dict]:
