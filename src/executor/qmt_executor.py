@@ -266,12 +266,15 @@ class QMTExecutor:
                         Logger.warning(f"标的 {qmt_code} 不在返回数据中")
 
                 # 提取 tick 数据
-                # get_full_tick 返回格式: { "SZ.300124": [{tick_dict}, ...] }
+                # get_full_tick 返回格式可能是: { "SZ.300124": [{tick_dict}, ...] } 或 { "SZ.300124": tick_dict }
                 tick = None
                 if isinstance(tick_data, dict) and qmt_code in tick_data:
                     ticks = tick_data[qmt_code]
                     if isinstance(ticks, list) and ticks:
                         tick = ticks[0]  # 取第一个tick
+                    elif isinstance(ticks, dict):
+                        # 某些版本直接返回 dict 而不是 list
+                        tick = ticks
                 
                 if tick is not None:
                     Logger.info(f"行情获取成功 | 标的:{qmt_code} | 价格:{tick.get('lastPrice')}")
@@ -537,6 +540,23 @@ class QMTExecutor:
         closes: List[Any] = []
         volumes: List[Any] = []
         amounts: List[Any] = []
+
+        # 结构0：pandas DataFrame（get_market_data 可能返回 DataFrame）
+        try:
+            import pandas as pd
+            if isinstance(data, pd.DataFrame):
+                if data.empty:
+                    return None
+                # DataFrame 列名可能是 time, close, volume, amount
+                times = data["time"].tolist() if "time" in data.columns else []
+                closes = data["close"].tolist() if "close" in data.columns else []
+                volumes = data["volume"].tolist() if "volume" in data.columns else []
+                amounts = data["amount"].tolist() if "amount" in data.columns else []
+                if times:
+                    return self._build_minute_result(times, closes, volumes, amounts)
+                return None
+        except ImportError:
+            pass
 
         # 结构1：{ "time": [...], "close":[...], ... }
         if isinstance(data, dict) and "time" in data:
