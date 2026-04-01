@@ -214,6 +214,12 @@ class QMTExecutor:
             # 使用 xtdata 获取实时行情
             import xtquant.xtdata as xtdata
             
+            # 确保 xtdata 已连接
+            try:
+                xtdata.connect()
+            except:
+                pass  # 可能已经连接
+            
             # 转换为QMT格式 (如 300124 -> SZ.300124)
             qmt_code = format_stock_code(stock_code)
             
@@ -375,6 +381,12 @@ class QMTExecutor:
             # 使用 xtdata 获取分时数据
             import xtquant.xtdata as xtdata
             
+            # 确保 xtdata 已连接
+            try:
+                xtdata.connect()
+            except:
+                pass  # 可能已经连接
+            
             # 转换为QMT格式 (如 300124 -> SZ.300124)
             qmt_code = format_stock_code(stock_code)
             
@@ -390,12 +402,13 @@ class QMTExecutor:
             
             Logger.info(f"获取分时数据 | qmt_code={qmt_code} | date={date} | start={start_time} | end={end_time}")
             
-            # 检查数据是否已下载
-            if not xtdata.is_downloaded(qmt_code, "1m", date):
-                Logger.warning(f"分时数据未下载，尝试下载 | qmt_code={qmt_code}")
-                # 尝试下载数据
+            # 尝试下载数据（参考示例代码）
+            Logger.info(f"尝试下载分时数据 | qmt_code={qmt_code} | date={date}")
+            try:
                 result = xtdata.download_history_data(qmt_code, "1m", date, date)
                 Logger.info(f"数据下载结果: {result}")
+            except Exception as e:
+                Logger.warning(f"数据下载失败（可能已存在）: {e}")
             
             # 获取1分钟K线数据
             data = xtdata.get_market_data(
