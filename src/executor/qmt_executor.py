@@ -15,17 +15,17 @@ from src.log.logger import Logger
 
 def format_stock_code(stock_code: str) -> str:
     """
-    将股票代码转换为QMT/xtquant需要的格式
+    将股票代码转换为 xtdata 需要的格式
     
     Args:
         stock_code: 股票代码，支持以下格式：
-            - "300124" -> "SZ.300124"
-            - "600000" -> "SH.600000" 
-            - "SZ.300124" -> "SZ.300124" (已正确格式直接返回)
-            - "SH.600000" -> "SH.600000"
+            - "300124" -> "300124.SZ"
+            - "600000" -> "600000.SH" 
+            - "300124.SZ" -> "300124.SZ" (已正确格式直接返回)
+            - "600000.SH" -> "600000.SH"
     
     Returns:
-        格式化后的股票代码，如 "SZ.300124"
+        格式化后的股票代码，如 "300124.SZ"
     """
     if not stock_code:
         return stock_code
@@ -38,10 +38,10 @@ def format_stock_code(stock_code: str) -> str:
     # 6开头：上海证券交易所 (SH)
     # 0/3开头：深圳证券交易所 (SZ)
     if stock_code.startswith('6'):
-        return f"SH.{stock_code}"
+        return f"{stock_code}.SH"
     else:
         # 0开头、3开头、8开头（北交所）、4开头（科创板）都是深圳
-        return f"SZ.{stock_code}"
+        return f"{stock_code}.SZ"
 
 
 class QMTExecutor:
