@@ -6,7 +6,7 @@ QMT执行引擎模块
 import time
 import threading
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from queue import Queue
 
 from src.strategy.signal import Order, OrderStatus, TradingSignal
@@ -228,23 +228,26 @@ class QMTExecutor:
                 period="tick",
                 count=1
             )
-            
-            if qmt_code in data and len(data[qmt_code]) > 0:
-                tick = data[qmt_code][0]
-                return {
-                    "stock_code": stock_code,
-                    "last_price": float(tick.get("lastPrice", 0)),
-                    "open": float(tick.get("open", 0)),
-                    "high": float(tick.get("high", 0)),
-                    "low": float(tick.get("low", 0)),
-                    "volume": int(tick.get("volume", 0)),
-                    "amount": float(tick.get("amount", 0)),
-                    "change": float(tick.get("priceChange", 0)),
-                    "change_pct": float(tick.get("change", 0)) / 100 if tick.get("change") else 0,
-                    "bid": tick.get("bid", []),
-                    "ask": tick.get("ask", []),
-                    "update_time": tick.get("updateTime", "")
-                }
+
+            tick = self._extract_tick(data, qmt_code)
+            if tick is None:
+                Logger.warning(f"行情数据为空 | 标的:{qmt_code}")
+                return None
+
+            return {
+                "stock_code": stock_code,
+                "last_price": self._safe_float(tick.get("lastPrice")),
+                "open": self._safe_float(tick.get("open")),
+                "high": self._safe_float(tick.get("high")),
+                "low": self._safe_float(tick.get("low")),
+                "volume": self._safe_int(tick.get("volume")),
+                "amount": self._safe_float(tick.get("amount")),
+                "change": self._safe_float(tick.get("priceChange")),
+                "change_pct": self._safe_float(tick.get("change")) / 100 if tick.get("change") not in (None, "") else 0.0,
+                "bid": tick.get("bid", []),
+                "ask": tick.get("ask", []),
+                "update_time": tick.get("updateTime", "")
+            }
         except Exception as e:
             Logger.error(f"获取行情失败: {e}")
             
@@ -384,39 +387,145 @@ class QMTExecutor:
                 end_time=end_time,
                 count=-1
             )
-            
-            if "time" in data:
-                times = data["time"]
-                opens = data.get("open", [])
-                highs = data.get("high", [])
-                lows = data.get("low", [])
-                closes = data.get("close", [])
-                volumes = data.get("volume", [])
-                amounts = data.get("amount", [])
-                
-                result = []
-                for i in range(len(times)):
-                    # 转换时间戳
-                    import datetime
-                    try:
-                        ts = times[i] / 1000  # 毫秒转秒
-                        dt = datetime.datetime.fromtimestamp(ts)
-                        time_str = dt.strftime("%H:%M:%S")
-                    except:
-                        time_str = str(times[i])
-                    
-                    result.append({
-                        "time": time_str,
-                        "price": float(closes[i]) if i < len(closes) else 0,
-                        "volume": int(volumes[i]) if i < len(volumes) else 0,
-                        "amount": float(amounts[i]) if i < len(amounts) else 0
-                    })
-                return result
+
+            minute_list = self._extract_minute_bars(data, qmt_code)
+            if minute_list is None:
+                Logger.warning(f"分时数据为空 | 标的:{qmt_code} | 日期:{date}")
+                return []
+            return minute_list
                 
         except Exception as e:
             Logger.error(f"获取分时数据失败: {e}")
             
         return []
+
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        """安全转换为 float"""
+        try:
+            if value in (None, ""):
+                return default
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = 0) -> int:
+        """安全转换为 int"""
+        try:
+            if value in (None, ""):
+                return default
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _extract_tick(self, data: Any, qmt_code: str) -> Optional[Dict]:
+        """兼容多种 xtdata tick 返回结构，提取最后一个 tick"""
+        if data is None:
+            return None
+
+        # 结构1：{ "SZ.300124": [ {tick...}, ... ] }
+        if isinstance(data, dict) and qmt_code in data:
+            ticks = data.get(qmt_code)
+            if isinstance(ticks, list) and ticks:
+                last_tick = ticks[-1]
+                if isinstance(last_tick, dict):
+                    return last_tick
+
+        # 结构2：{ "lastPrice": { "SZ.300124": [..] }, ... }
+        if isinstance(data, dict):
+            field_candidates = [
+                "lastPrice", "open", "high", "low", "volume",
+                "amount", "change", "priceChange", "bid", "ask", "updateTime"
+            ]
+            tick: Dict[str, Any] = {}
+            found = False
+            for field in field_candidates:
+                field_data = data.get(field)
+                if isinstance(field_data, dict) and qmt_code in field_data:
+                    arr = field_data.get(qmt_code)
+                    if isinstance(arr, (list, tuple)) and arr:
+                        tick[field] = arr[-1]
+                        found = True
+                    elif arr is not None and not isinstance(arr, (list, tuple)):
+                        tick[field] = arr
+                        found = True
+            if found:
+                return tick
+
+        return None
+
+    def _extract_minute_bars(self, data: Any, qmt_code: str) -> Optional[List[Dict]]:
+        """兼容多种 xtdata 分时返回结构，统一为 minute 列表"""
+        if data is None:
+            return None
+
+        times: List[Any] = []
+        closes: List[Any] = []
+        volumes: List[Any] = []
+        amounts: List[Any] = []
+
+        # 结构1：{ "time": [...], "close":[...], ... }
+        if isinstance(data, dict) and "time" in data:
+            times = data.get("time", []) or []
+            closes = data.get("close", []) or []
+            volumes = data.get("volume", []) or []
+            amounts = data.get("amount", []) or []
+
+        # 结构2：{ "time": {"SZ.300124":[...]}, "close": {"SZ.300124":[...]}, ... }
+        elif isinstance(data, dict) and isinstance(data.get("time"), dict):
+            time_map = data.get("time", {})
+            if qmt_code not in time_map:
+                return None
+            times = time_map.get(qmt_code, []) or []
+            close_map = data.get("close", {})
+            volume_map = data.get("volume", {})
+            amount_map = data.get("amount", {})
+            closes = close_map.get(qmt_code, []) if isinstance(close_map, dict) else []
+            volumes = volume_map.get(qmt_code, []) if isinstance(volume_map, dict) else []
+            amounts = amount_map.get(qmt_code, []) if isinstance(amount_map, dict) else []
+        else:
+            return None
+
+        if not isinstance(times, (list, tuple)) or len(times) == 0:
+            return None
+
+        return self._build_minute_result(times, closes, volumes, amounts)
+
+    def _build_minute_result(
+        self,
+        times: List[Any],
+        closes: List[Any],
+        volumes: List[Any],
+        amounts: List[Any]
+    ) -> List[Dict]:
+        """根据时间/价格等序列构造分时列表"""
+        result = []
+        for i in range(len(times)):
+            time_str = self._format_time(times[i])
+            price = self._safe_float(closes[i]) if i < len(closes) else 0.0
+            volume = self._safe_int(volumes[i]) if i < len(volumes) else 0
+            amount = self._safe_float(amounts[i]) if i < len(amounts) else 0.0
+            result.append({
+                "time": time_str,
+                "price": price,
+                "volume": volume,
+                "amount": amount
+            })
+        return result
+
+    @staticmethod
+    def _format_time(value: Any) -> str:
+        """兼容时间戳/字符串格式为 HH:MM:SS"""
+        import datetime
+        try:
+            if isinstance(value, (int, float)):
+                ts = value / 1000 if value > 10_000_000_000 else value
+                dt = datetime.datetime.fromtimestamp(ts)
+                return dt.strftime("%H:%M:%S")
+            return str(value)
+        except Exception:
+            return str(value)
 
     def get_order(self, order_id: str) -> Optional[Dict]:
         """查询订单状态"""

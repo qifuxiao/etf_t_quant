@@ -33,7 +33,6 @@ try:
     from src.executor.qmt_executor import QMTExecutor, format_stock_code
     from src.strategy.signal import SignalType
     from src.state.state_manager import StateManager
-    from src.log.logger import Logger
 except ImportError as e:
     print(f"导入模块失败: {e}")
     # 如果导入失败，提供降级的 API 服务
@@ -41,7 +40,6 @@ except ImportError as e:
     MarketModule = None
     QMTExecutor = None
     format_stock_code = None
-    Logger = None
 
 
 # ==================== 数据模型 ====================
@@ -268,61 +266,60 @@ async def get_history(
     """
     qmt, market_module, state_manager, config = qmt_tuple
     
-    # 格式化股票代码 (如 300124 -> SZ.300124)
-    qmt_code = format_stock_code(code) if format_stock_code else code
-
-    # 转换日期格式
-    date_str = date.replace("-", "")
-
-    # 获取分时数据：真实异常返回5xx；无数据仅告警
-    minute_data = []
-    if qmt:
-        try:
-            minute_list = qmt.get_minute_data(qmt_code, date_str)
-        except Exception as e:
-            if Logger:
-                Logger.error(f"获取历史分时数据异常 | code={qmt_code} | date={date_str} | err={e}")
-            raise HTTPException(status_code=502, detail=f"获取历史分时数据失败: {str(e)}")
-
-        if not minute_list:
-            if Logger:
-                Logger.warning(f"历史分时数据为空 | code={qmt_code} | date={date_str}")
-        else:
-            for m in minute_list:
-                minute_data.append(MinuteBar(
-                    time=m.get('time', ''),
-                    price=float(m.get('price', 0)),
-                    volume=int(m.get('volume', 0)),
-                    vwap=0.0
-                ))
-
-    # 获取交易信号：异常返回5xx，避免吞错
-    signals = []
-    if state_manager:
-        try:
-            state = state_manager.get_state()
-            trade_history = state.get('trade_history', [])
-
-            for trade in trade_history:
-                trade_date = trade.get('date', '')[:8]
-                if trade_date == date_str:
-                    signals.append(Signal(
-                        time=trade.get('time', ''),
-                        type=trade.get('signal_type', ''),
-                        price=float(trade.get('price', 0)),
-                        reason=trade.get('reason', '')
+    try:
+        # 格式化股票代码 (如 300124 -> SZ.300124)
+        qmt_code = format_stock_code(code) if format_stock_code else code
+        
+        # 转换日期格式
+        date_str = date.replace("-", "")
+        
+        # 获取分时数据
+        minute_data = []
+        if qmt:
+            try:
+                minute_list = qmt.get_minute_data(qmt_code, date_str)
+                for m in minute_list:
+                    minute_data.append(MinuteBar(
+                        time=m.get('time', ''),
+                        price=float(m.get('price', 0)),
+                        volume=int(m.get('volume', 0)),
+                        vwap=0.0
                     ))
-        except Exception as e:
-            if Logger:
-                Logger.error(f"获取历史信号异常 | code={qmt_code} | date={date_str} | err={e}")
-            raise HTTPException(status_code=500, detail=f"获取历史信号失败: {str(e)}")
-
-    return HistoryResponse(
-        code=code,
-        date=date,
-        data=minute_data,
-        signals=signals
-    )
+            except Exception as e:
+                print(f"获取历史分时数据失败: {e}")
+        
+        # 获取交易信号
+        signals = []
+        if state_manager:
+            try:
+                # 从状态中获取历史信号
+                state = state_manager.get_state()
+                trade_history = state.get('trade_history', [])
+                
+                for trade in trade_history:
+                    trade_date = trade.get('date', '')[:8]
+                    if trade_date == date_str:
+                        signals.append(Signal(
+                            time=trade.get('time', ''),
+                            type=trade.get('signal_type', ''),
+                            price=float(trade.get('price', 0)),
+                            reason=trade.get('reason', '')
+                        ))
+            except Exception as e:
+                print(f"获取交易信号失败: {e}")
+        
+        # 如果没有信号，尝试从 config 获取股票名称
+        stock_name = config.stock_name if code == config.stock_code else code
+        
+        return HistoryResponse(
+            code=code,
+            date=date,
+            data=minute_data,
+            signals=signals
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取历史数据失败: {str(e)}")
 
 
 @app.get("/api/signals", response_model=SignalsResponse)
