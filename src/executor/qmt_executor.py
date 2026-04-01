@@ -560,10 +560,61 @@ class QMTExecutor:
 
         # 结构1：{ "time": [...], "close":[...], ... }
         if isinstance(data, dict) and "time" in data:
-            times = data.get("time", []) or []
-            closes = data.get("close", []) or []
-            volumes = data.get("volume", []) or []
-            amounts = data.get("amount", []) or []
+            time_val = data.get("time")
+            # 处理 DataFrame 或其他非list类型
+            if time_val is None:
+                times = []
+            elif isinstance(time_val, list):
+                times = time_val
+            else:
+                # 可能是 DataFrame 或其他类型
+                try:
+                    import pandas as pd
+                    if isinstance(time_val, pd.DataFrame):
+                        times = time_val.tolist() if len(time_val) > 0 else []
+                    else:
+                        times = []
+                except:
+                    times = []
+            
+            close_val = data.get("close")
+            if isinstance(close_val, list):
+                closes = close_val
+            else:
+                try:
+                    import pandas as pd
+                    if isinstance(close_val, pd.DataFrame):
+                        closes = close_val.tolist() if len(close_val) > 0 else []
+                    else:
+                        closes = []
+                except:
+                    closes = []
+            
+            volume_val = data.get("volume")
+            if isinstance(volume_val, list):
+                volumes = volume_val
+            else:
+                try:
+                    import pandas as pd
+                    if isinstance(volume_val, pd.DataFrame):
+                        volumes = volume_val.tolist() if len(volume_val) > 0 else []
+                    else:
+                        volumes = []
+                except:
+                    volumes = []
+                    
+            amount_val = data.get("amount")
+            if isinstance(amount_val, list):
+                amounts = amount_val
+            else:
+                try:
+                    import pandas as pd
+                    if isinstance(amount_val, pd.DataFrame):
+                        amounts = amount_val.tolist() if len(amount_val) > 0 else []
+                    else:
+                        amounts = []
+                except:
+                    amounts = []
 
         # 结构2：{ "time": {"SZ.300124":[...]}, "close": {"SZ.300124":[...]}, ... }
         elif isinstance(data, dict) and isinstance(data.get("time"), dict):
