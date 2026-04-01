@@ -217,6 +217,8 @@ class QMTExecutor:
             # 转换为QMT格式 (如 300124 -> SZ.300124)
             qmt_code = format_stock_code(stock_code)
             
+            Logger.info(f"获取实时行情 | qmt_code={qmt_code}")
+            
             # 订阅行情
             xtdata.subscribe_quote(qmt_code)
             
@@ -228,10 +230,18 @@ class QMTExecutor:
                 period="tick",
                 count=1
             )
+            
+            Logger.info(f"xtdata返回数据类型: {type(data)}")
+            if isinstance(data, dict):
+                Logger.info(f"xtdata返回keys: {data.keys()}")
+                if qmt_code in data:
+                    Logger.info(f"标的行情数据条数: {len(data[qmt_code])}")
+                else:
+                    Logger.warning(f"标的 {qmt_code} 不在返回数据中")
 
             tick = self._extract_tick(data, qmt_code)
             if tick is None:
-                Logger.warning(f"行情数据为空 | 标的:{qmt_code}")
+                Logger.warning(f"行情数据为空 | 标的:{qmt_code} | 原始数据={data}")
                 return None
 
             return {
@@ -378,6 +388,15 @@ class QMTExecutor:
                 start_time = date
                 end_time = date
             
+            Logger.info(f"获取分时数据 | qmt_code={qmt_code} | date={date} | start={start_time} | end={end_time}")
+            
+            # 检查数据是否已下载
+            if not xtdata.is_downloaded(qmt_code, "1m", date):
+                Logger.warning(f"分时数据未下载，尝试下载 | qmt_code={qmt_code}")
+                # 尝试下载数据
+                result = xtdata.download_history_data(qmt_code, "1m", date, date)
+                Logger.info(f"数据下载结果: {result}")
+            
             # 获取1分钟K线数据
             data = xtdata.get_market_data(
                 field_list=["time", "open", "high", "low", "close", "volume", "amount"],
@@ -387,15 +406,20 @@ class QMTExecutor:
                 end_time=end_time,
                 count=-1
             )
-
+            
+            Logger.info(f"xtdata返回数据类型: {type(data)} | keys: {data.keys() if isinstance(data, dict) else 'N/A'}")
+            
             minute_list = self._extract_minute_bars(data, qmt_code)
             if minute_list is None:
-                Logger.warning(f"分时数据为空 | 标的:{qmt_code} | 日期:{date}")
+                Logger.warning(f"分时数据为空 | 标的:{qmt_code} | 日期:{date} | 原始数据={data}")
                 return []
+            Logger.info(f"分时数据获取成功 | 条数:{len(minute_list)}")
             return minute_list
                 
         except Exception as e:
             Logger.error(f"获取分时数据失败: {e}")
+            import traceback
+            Logger.error(traceback.format_exc())
             
         return []
 
