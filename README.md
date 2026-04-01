@@ -30,11 +30,12 @@ ETF T 策略量化交易系统是一个基于 Python 的自动化交易系统，
 - 日志自动管理
 - 断线重连
 - 模拟交易模式
+- **API 服务**：提供 HTTP API 接口，支持前端实时行情和回测
 
 ## 环境要求
 
 ### Python 版本
-- Python 3.8 ~ 3.10
+- Python 3.8 ~ 3.12
 
 ### 依赖库
 ```
@@ -45,6 +46,8 @@ requests>=2.25.0
 python-dateutil>=2.8.0
 loguru>=0.6.0
 schedule>=1.1.0
+fastapi>=0.100.0
+uvicorn>=0.22.0
 ```
 
 ### 运行环境
@@ -77,20 +80,32 @@ capital:
 
 # QMT配置
 qmt:
-  account: "55057942"     # QMT账号
-  password: "259800"     # QMT密码
+  account: "8881517461"     # QMT账号
   path: "D:/国金QMT交易端模拟/userdata_mini"  # QMT路径
-  host: "127.0.0.1"
-  port: 5910
+  session_id: 123456
 ```
 
-### 3. 启动系统
+### 3. 启动 API 服务
 
 ```bash
-python main.py
+cd etf_t_quant
+python api_server.py
 ```
 
-### 4. 监控日志
+服务启动后访问：
+- API 文档：http://localhost:8080/docs
+- 实时行情：http://localhost:8080/api/realtime?code=300124
+- 历史分时：http://localhost:8080/api/history?code=300124&date=2026-04-01
+
+### 4. 启动前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### 5. 监控日志
 
 查看 `logs/` 目录下的交易日志：
 
@@ -102,33 +117,51 @@ tail -f logs/trade_2024*.log
 
 ```
 etf_t_quant/
-├── main.py                 # 主入口文件
-├── config.yml              # 配置文件
-├── requirements.txt        # Python依赖
+├── api_server.py           # API 服务入口
+├── main.py                  # 主策略入口（可选）
+├── config.yml               # 配置文件
+├── requirements.txt         # Python依赖
 ├── src/
-│   ├── config.py           # 配置管理模块
-│   ├── main_controller.py  # 主控模块
-│   ├── market_data.py      # 行情模块
+│   ├── config.py            # 配置管理模块
+│   ├── main_controller.py   # 主控模块
+│   ├── market_data.py       # 行情模块
+│   ├── api.py               # FastAPI 服务
 │   ├── strategy/
-│   │   ├── t_strategy.py   # 做T策略
-│   │   ├── band_strategy.py# 波段策略
-│   │   └── signal.py       # 信号定义
+│   │   ├── t_strategy.py    # 做T策略
+│   │   ├── band_strategy.py # 波段策略
+│   │   └── signal.py        # 信号定义
 │   ├── executor/
-│   │   └── qmt_executor.py # QMT执行引擎
+│   │   └── qmt_executor.py # QMT执行引擎（xtdata/xttrader）
 │   ├── risk/
 │   │   └── risk_engine.py  # 风控引擎
 │   ├── state/
 │   │   └── state_manager.py# 状态管理
 │   └── log/
 │       └── logger.py       # 日志模块
-├── app/
-│   └── infrastructure/
-│       └── qmt_client.py   # QMT客户端封装
-├── xtquant/                # QMT Python API
-├── data/                   # 状态数据目录
-├── logs/                   # 日志目录
-└── tests/                  # 测试用例
+├── frontend/                 # React 前端
+│   ├── src/
+│   │   ├── components/      # 组件
+│   │   ├── stores/           # 状态管理
+│   │   └── App.tsx          # 主应用
+│   └── package.json
+├── data/                    # 状态数据目录
+├── logs/                    # 日志目录
+└── tests/                   # 测试用例
 ```
+
+## API 接口
+
+| 接口 | 方法 | 说明 | 示例 |
+|------|------|------|------|
+| `/` | GET | 根路径 | `http://localhost:8080/` |
+| `/health` | GET | 健康检查 | `http://localhost:8080/health` |
+| `/api/realtime` | GET | 实时行情+分时 | `?code=300124` |
+| `/api/history` | GET | 历史分时数据 | `?code=300124&date=2026-04-01` |
+| `/api/stock` | GET | 股票基本信息 | `?code=300124` |
+| `/api/signals` | GET | 交易信号 | `?code=300124` |
+| `/api/dates` | GET | 可用交易日 | `?code=300124` |
+| `/api/account` | GET | 资金账户信息 | - |
+| `/api/position` | GET | 持仓信息 | `?code=300124` |
 
 ## 策略说明
 
@@ -153,6 +186,15 @@ etf_t_quant/
 | `profit_target` | 0.15 | 目标止盈15% |
 | `stop_loss_fixed` | 0.05 | 固定止损-5% |
 
+## 数据源
+
+系统使用 **xtdata** 获取真实行情数据：
+- **实时行情**：`xtdata.get_full_tick()`
+- **历史分时**：`xtdata.get_market_data(period='1m')`
+- **历史日K**：`xtdata.get_market_data(period='1d')`
+
+数据来源于 QMT 客户端连接的行情服务器，确保数据真实性。
+
 ## 注意事项
 
 ### 1. 风险提示
@@ -162,7 +204,7 @@ etf_t_quant/
 
 ### 2. QMT 要求
 - 需要先启动 QMT 客户端并完成登录
-- 确保 QMT 端口（5910）未被占用
+- 确保 QMT 路径正确（userdata_mini 目录）
 - 网络不畅时系统会自动重连
 
 ### 3. 运行模式
@@ -177,6 +219,9 @@ etf_t_quant/
 
 **Q: 启动时提示 QMT 连接失败？**
 A: 检查 QMT 客户端是否已启动，配置文件中的账号密码是否正确。
+
+**Q: API 返回空数据？**
+A: 确认 QMT 已登录，xtdata 已连接。可能需要先下载历史数据。
 
 **Q: 策略不执行交易？**
 A: 检查：1) 策略是否启用；2) 是否在交易时间内；3) 风控是否拦截。
