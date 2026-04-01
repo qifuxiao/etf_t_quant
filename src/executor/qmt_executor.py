@@ -532,7 +532,14 @@ class QMTExecutor:
         return None
 
     def _extract_minute_bars(self, data: Any, qmt_code: str) -> Optional[List[Dict]]:
-        """兼容多种 xtdata 分时返回结构，统一为 minute 列表"""
+        """兼容多种 xtdata 分时返回结构，统一为 minute 列表
+        
+        xtdata get_market_data 返回的数据结构:
+        - data 是一个字典，包含 'open', 'high', 'low', 'close', 'volume', 'amount' 等键
+        - 每个键对应一个 DataFrame，索引是股票代码，列是时间戳
+        - 时间从 data['close'].columns.tolist() 获取
+        - 数据从 data['字段'].loc[qmt_code].values 获取
+        """
         if data is None:
             return None
 
@@ -541,7 +548,55 @@ class QMTExecutor:
         volumes: List[Any] = []
         amounts: List[Any] = []
 
-        # 结构0：pandas DataFrame（get_market_data 可能返回 DataFrame）
+        # 结构0：xtdata 返回的字典格式 { 'open': DataFrame, 'high': DataFrame, ... }
+        # 每个 DataFrame 的索引是股票代码，列是时间戳
+        try:
+            import pandas as pd
+            if isinstance(data, dict):
+                # 检查是否是 xtdata 返回的字典格式（每个字段都是 DataFrame）
+                if 'close' in data and isinstance(data['close'], pd.DataFrame):
+                    close_df = data['close']
+                    
+                    # 获取时间列表（从 close DataFrame 的列获取）
+                    if hasattr(close_df, 'columns'):
+                        times = close_df.columns.tolist()
+                        Logger.info(f"从 data['close'].columns 获取时间列表 | 条数:{len(times)}")
+                        
+                        # 检查 qmt_code 是否在 DataFrame 的索引中
+                        if qmt_code in close_df.index:
+                            # 从各字段 DataFrame 中提取该股票的数据
+                            opens = data.get('open', pd.Series())
+                            highs = data.get('high', pd.Series())
+                            lows = data.get('low', pd.Series())
+                            closes = data.get('close', pd.Series())
+                            volumes = data.get('volume', pd.Series())
+                            amounts = data.get('amount', pd.Series())
+                            
+                            # 使用 loc 获取对应股票的数据，并转换为列表
+                            if isinstance(opens, pd.DataFrame) and qmt_code in opens.index:
+                                opens = opens.loc[qmt_code].values
+                            if isinstance(highs, pd.DataFrame) and qmt_code in highs.index:
+                                highs = highs.loc[qmt_code].values
+                            if isinstance(lows, pd.DataFrame) and qmt_code in lows.index:
+                                lows = lows.loc[qmt_code].values
+                            if isinstance(closes, pd.DataFrame) and qmt_code in closes.index:
+                                closes = closes.loc[qmt_code].values
+                            if isinstance(volumes, pd.DataFrame) and qmt_code in volumes.index:
+                                volumes = volumes.loc[qmt_code].values
+                            if isinstance(amounts, pd.DataFrame) and qmt_code in amounts.index:
+                                amounts = amounts.loc[qmt_code].values
+                            
+                            Logger.info(f"xtdata分时数据提取成功 | 标的:{qmt_code} | 条数:{len(times)}")
+                            return self._build_minute_result_full(times, opens, highs, lows, closes, volumes, amounts)
+                        else:
+                            Logger.warning(f"标的 {qmt_code} 不在 DataFrame 索引中，索引: {close_df.index.tolist()[:5]}...")
+                            return None
+        except ImportError:
+            pass
+        except Exception as e:
+            Logger.warning(f"xtdata字典格式解析失败: {e}")
+
+        # 结构1：pandas DataFrame（get_market_data 可能返回 DataFrame）
         try:
             import pandas as pd
             if isinstance(data, pd.DataFrame):
@@ -678,6 +733,51 @@ class QMTExecutor:
             result.append({
                 "time": time_str,
                 "price": price,
+                "volume": volume,
+                "amount": amount
+            })
+        return result
+
+    def _build_minute_result_full(
+        self,
+        times: List[Any],
+        opens: Any,
+        highs: Any,
+        lows: Any,
+        closes: Any,
+        volumes: Any,
+        amounts: Any
+    ) -> List[Dict]:
+        """根据时间/价格等序列构造完整的分时列表（包含 OHLC）"""
+        result = []
+        # 确保所有数据都是列表
+        if hasattr(opens, 'tolist'):
+            opens = opens.tolist()
+        if hasattr(highs, 'tolist'):
+            highs = highs.tolist()
+        if hasattr(lows, 'tolist'):
+            lows = lows.tolist()
+        if hasattr(closes, 'tolist'):
+            closes = closes.tolist()
+        if hasattr(volumes, 'tolist'):
+            volumes = volumes.tolist()
+        if hasattr(amounts, 'tolist'):
+            amounts = amounts.tolist()
+        
+        for i in range(len(times)):
+            time_str = self._format_time(times[i])
+            open_price = self._safe_float(opens[i]) if isinstance(opens, list) and i < len(opens) else 0.0
+            high_price = self._safe_float(highs[i]) if isinstance(highs, list) and i < len(highs) else 0.0
+            low_price = self._safe_float(lows[i]) if isinstance(lows, list) and i < len(lows) else 0.0
+            close_price = self._safe_float(closes[i]) if isinstance(closes, list) and i < len(closes) else 0.0
+            volume = self._safe_int(volumes[i]) if isinstance(volumes, list) and i < len(volumes) else 0
+            amount = self._safe_float(amounts[i]) if isinstance(amounts, list) and i < len(amounts) else 0.0
+            result.append({
+                "time": time_str,
+                "open": open_price,
+                "high": high_price,
+                "low": low_price,
+                "close": close_price,
                 "volume": volume,
                 "amount": amount
             })
