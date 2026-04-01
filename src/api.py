@@ -58,8 +58,13 @@ class StockInfo(BaseModel):
 class MinuteBar(BaseModel):
     """分时K线"""
     time: str
-    price: float
-    volume: int
+    open: float = 0.0
+    high: float = 0.0
+    low: float = 0.0
+    close: float = 0.0
+    price: float = 0.0
+    volume: int = 0
+    amount: float = 0.0
     vwap: float = 0.0
 
 
@@ -320,8 +325,13 @@ async def get_history(
             for m in minute_list:
                 minute_data.append(MinuteBar(
                     time=m.get('time', ''),
-                    price=float(m.get('price', 0)),
-                    volume=int(m.get('volume', 0)),
+                    open=m.get('open', 0),
+                    high=m.get('high', 0),
+                    low=m.get('low', 0),
+                    close=m.get('close', 0),
+                    price=m.get('close', 0),
+                    volume=m.get('volume', 0),
+                    amount=m.get('amount', 0),
                     vwap=0.0
                 ))
 

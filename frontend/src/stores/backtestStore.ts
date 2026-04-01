@@ -119,10 +119,16 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       
       if (response.data && response.data.length > 0) {
         // 将分时数据转换为 BacktestData 格式
+        // 支持 price 或 close 字段
         const timeSeries = response.data.map((item: any, index: number) => ({
           time: item.time,
-          price: item.price,
-          volume: item.volume,
+          open: item.open || 0,
+          high: item.high || 0,
+          low: item.low || 0,
+          close: item.close || item.price || 0,
+          price: item.close || item.price || 0,
+          volume: item.volume || 0,
+          amount: item.amount || 0,
           index
         }));
         
