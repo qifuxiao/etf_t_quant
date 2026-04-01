@@ -548,12 +548,48 @@ class QMTExecutor:
                 if data.empty:
                     return None
                 # DataFrame 列名可能是 time, close, volume, amount
-                times = data["time"].tolist() if "time" in data.columns else []
-                closes = data["close"].tolist() if "close" in data.columns else []
-                volumes = data["volume"].tolist() if "volume" in data.columns else []
-                amounts = data["amount"].tolist() if "amount" in data.columns else []
-                if times:
-                    return self._build_minute_result(times, closes, volumes, amounts)
+                # 需要检查 DataFrame 结构
+                if "time" in data.columns:
+                    # 可能是 MultiIndex DataFrame，尝试多种方式提取
+                    try:
+                        # 方式1: 直接转置
+                        time_df = data["time"]
+                        if hasattr(time_df, 'values'):
+                            times = time_df.values.flatten().tolist()
+                        elif hasattr(time_df, 'tolist'):
+                            times = time_df.tolist()
+                    except:
+                        pass
+                    
+                    try:
+                        close_df = data["close"]
+                        if hasattr(close_df, 'values'):
+                            closes = close_df.values.flatten().tolist()
+                        elif hasattr(close_df, 'tolist'):
+                            closes = close_df.tolist()
+                    except:
+                        pass
+                    
+                    try:
+                        volume_df = data["volume"]
+                        if hasattr(volume_df, 'values'):
+                            volumes = volume_df.values.flatten().tolist()
+                        elif hasattr(volume_df, 'tolist'):
+                            volumes = volume_df.tolist()
+                    except:
+                        pass
+                    
+                    try:
+                        amount_df = data["amount"]
+                        if hasattr(amount_df, 'values'):
+                            amounts = amount_df.values.flatten().tolist()
+                        elif hasattr(amount_df, 'tolist'):
+                            amounts = amount_df.tolist()
+                    except:
+                        pass
+                    
+                    if times:
+                        return self._build_minute_result(times, closes, volumes, amounts)
                 return None
         except ImportError:
             pass
