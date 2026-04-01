@@ -8,6 +8,7 @@ interface BacktestState {
   availableDates: string[];
   datesCache: Record<string, string[]>;  // 日期缓存
   error: string | null;
+  isLoading: boolean;  // 加载状态
   
   // 播放控制
   playback: PlaybackState;
@@ -38,6 +39,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   availableDates: [],
   datesCache: {},
   error: null,
+  isLoading: false,
   
   playback: {
     isPlaying: false,
@@ -104,41 +106,47 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   },
   
   setDate: (date) => {
-    set({ selectedDate: date });
-    // 选择日期后自动加载数据
-    get().loadData(date);
+    set({ selectedDate: date, error: null });
+    // 选择日期后不自动加载数据，等待用户点击"开始回测"
   },
   
   loadData: async (date) => {
-    set({ error: null });
+    set({ error: null, isLoading: true });
     
     try {
       const res = await fetch(`${API_BASE}/api/history?code=${DEFAULT_CODE}&date=${date}`);
       const response = await res.json();
       
-      if (response.code === 0 && response.data) {
-        const data: BacktestData = {
-          date,
-          timeSeries: response.data.timeSeries || [],
-          signals: response.data.signals || [],
-          triggers: response.data.triggers || []
-        };
+      if (response.data && response.data.length > 0) {
+        // 将分时数据转换为 BacktestData 格式
+        const timeSeries = response.data.map((item: any, index: number) => ({
+          time: item.time,
+          price: item.price,
+          volume: item.volume,
+          index
+        }));
         
         set({ 
-          data,
+          data: {
+            date,
+            timeSeries,
+            signals: response.signals || [],
+            triggers: []
+          },
+          isLoading: false,
           playback: {
             isPlaying: false,
             currentIndex: 0,
             speed: 1,
-            totalPoints: data.timeSeries.length
+            totalPoints: timeSeries.length
           }
         });
       } else {
-        set({ error: response.message || '加载数据失败' });
+        set({ error: '该日期暂无数据', isLoading: false });
       }
     } catch (error) {
       console.error('加载历史数据失败:', error);
-      set({ error: '连接服务器失败，请检查后端服务是否运行' });
+      set({ error: '连接服务器失败，请检查后端服务是否运行', isLoading: false });
     }
   },
   
