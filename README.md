@@ -105,6 +105,22 @@ npm install
 npm run dev
 ```
 
+### 4. 启动前端回测
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+打开浏览器访问：http://localhost:5173
+
+**回测功能使用**：
+1. 选择"回测模式"
+2. 选择要回测的日期
+3. 点击"开始回测"按钮
+4. 系统将下载所选日期的分时数据并进行回测
+
 ### 5. 监控日志
 
 查看 `logs/` 目录下的交易日志：
@@ -194,6 +210,22 @@ etf_t_quant/
 - **历史日K**：`xtdata.get_market_data(period='1d')`
 
 数据来源于 QMT 客户端连接的行情服务器，确保数据真实性。
+
+### 分时数据格式
+
+API 返回的分时数据包含完整的 OHLC 数据：
+
+```json
+{
+  "time": "09:30:00",
+  "open": 68.50,
+  "high": 68.55,
+  "low": 68.36,
+  "close": 68.50,
+  "volume": 1914,
+  "amount": 13110900.0
+}
+```
 
 ## 注意事项
 
