@@ -229,53 +229,77 @@ class QMTExecutor:
             from datetime import datetime, timedelta
             end_date = datetime.now().strftime("%Y%m%d")
             start_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
+            
+            # 下载历史数据并等待完成
             try:
                 Logger.info(f"下载历史数据 | qmt_code={qmt_code} | {start_date}~{end_date}")
-                xtdata.download_history_data(qmt_code, "1d", start_date, end_date)
+                # download_history_data 可能返回下载结果，需要等待完成
+                result = xtdata.download_history_data(qmt_code, "1d", start_date, end_date)
+                Logger.info(f"历史数据下载结果: {result}")
+                
+                # 等待数据写入（xtdata是异步写入的）
+                time.sleep(1)
             except Exception as e:
                 Logger.warning(f"历史数据下载失败（可能已存在）: {e}")
             
             # 订阅行情
             xtdata.subscribe_quote(qmt_code)
             
-            # 获取最新行情
-            data = xtdata.get_market_data(
-                field_list=["lastPrice", "open", "high", "low", "volume", "amount", 
-                           "change", "priceChange", "bid", "ask", "updateTime"],
-                stock_list=[qmt_code],
-                period="tick",
-                count=1
-            )
+            # 等待订阅数据返回（增加等待时间确保数据到达）
+            time.sleep(0.5)
             
-            Logger.info(f"xtdata返回数据类型: {type(data)}")
-            if isinstance(data, dict):
-                Logger.info(f"xtdata返回keys: {data.keys()}")
-                if qmt_code in data:
-                    Logger.info(f"标的行情数据条数: {len(data[qmt_code])}")
-                else:
-                    Logger.warning(f"标的 {qmt_code} 不在返回数据中")
+            # 重试获取最新行情（最多重试3次）
+            max_retries = 3
+            retry_delay = 0.5
+            
+            for retry in range(max_retries):
+                # 获取最新行情
+                data = xtdata.get_market_data(
+                    field_list=["lastPrice", "open", "high", "low", "volume", "amount", 
+                               "change", "priceChange", "bid", "ask", "updateTime"],
+                    stock_list=[qmt_code],
+                    period="tick",
+                    count=1
+                )
+                
+                Logger.info(f"xtdata返回数据类型: {type(data)}")
+                if isinstance(data, dict):
+                    Logger.info(f"xtdata返回keys: {data.keys()}")
+                    if qmt_code in data:
+                        Logger.info(f"标的行情数据条数: {len(data[qmt_code])}")
+                    else:
+                        Logger.warning(f"标的 {qmt_code} 不在返回数据中")
 
-            tick = self._extract_tick(data, qmt_code)
-            if tick is None:
-                Logger.warning(f"行情数据为空 | 标的:{qmt_code} | 原始数据={data}")
-                return None
-
-            return {
-                "stock_code": stock_code,
-                "last_price": self._safe_float(tick.get("lastPrice")),
-                "open": self._safe_float(tick.get("open")),
-                "high": self._safe_float(tick.get("high")),
-                "low": self._safe_float(tick.get("low")),
-                "volume": self._safe_int(tick.get("volume")),
-                "amount": self._safe_float(tick.get("amount")),
-                "change": self._safe_float(tick.get("priceChange")),
-                "change_pct": self._safe_float(tick.get("change")) / 100 if tick.get("change") not in (None, "") else 0.0,
-                "bid": tick.get("bid", []),
-                "ask": tick.get("ask", []),
-                "update_time": tick.get("updateTime", "")
-            }
+                tick = self._extract_tick(data, qmt_code)
+                if tick is not None:
+                    Logger.info(f"行情获取成功 | 标的:{qmt_code} | 价格:{tick.get('lastPrice')}")
+                    return {
+                        "stock_code": stock_code,
+                        "last_price": self._safe_float(tick.get("lastPrice")),
+                        "open": self._safe_float(tick.get("open")),
+                        "high": self._safe_float(tick.get("high")),
+                        "low": self._safe_float(tick.get("low")),
+                        "volume": self._safe_int(tick.get("volume")),
+                        "amount": self._safe_float(tick.get("amount")),
+                        "change": self._safe_float(tick.get("priceChange")),
+                        "change_pct": self._safe_float(tick.get("change")) / 100 if tick.get("change") not in (None, "") else 0.0,
+                        "bid": tick.get("bid", []),
+                        "ask": tick.get("ask", []),
+                        "update_time": tick.get("updateTime", "")
+                    }
+                
+                # 重试前等待
+                if retry < max_retries - 1:
+                    Logger.warning(f"行情数据为空，重试 {retry+1}/{max_retries} | 标的:{qmt_code}")
+                    time.sleep(retry_delay)
+            
+            # 所有重试都失败
+            Logger.warning(f"行情数据为空 | 标的:{qmt_code} | 已重试{max_retries}次")
+            return None
         except Exception as e:
             Logger.error(f"获取行情失败: {e}")
+            import traceback
+            Logger.error(traceback.format_exc())
             
         return None
 
