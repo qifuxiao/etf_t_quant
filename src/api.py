@@ -106,6 +106,23 @@ class StockResponse(BaseModel):
     changePercent: float
 
 
+class AccountResponse(BaseModel):
+    """资金账户响应"""
+    available: float = 0.0
+    total: float = 0.0
+    market_value: float = 0.0
+    frozen: float = 0.0
+    connected: bool = False
+    message: str = ""
+
+
+class PositionResponse(BaseModel):
+    """持仓响应"""
+    positions: Dict[str, Dict[str, Any]] = {}
+    connected: bool = False
+    message: str = ""
+
+
 # ==================== 全局变量 ====================
 
 app = FastAPI(
@@ -146,6 +163,18 @@ async def get_qmt_connection():
             
             try:
                 _qmt_executor.start()
+                
+                # 打印资金账号信息
+                if _qmt_executor.is_connected():
+                    account_info = _qmt_executor.get_account()
+                    if account_info:
+                        print(f"💰 资金账号加载成功 | account_id={_config.qmt_account if hasattr(_config, 'qmt_account') else 'N/A'}")
+                        print(f"💵 账户资金 | 可用:{account_info.get('available', 0):.2f} | 总资产:{account_info.get('total', 0):.2f}")
+                    else:
+                        print("⚠️ 无法获取账户资金信息")
+                else:
+                    print("⚠️ QMT未连接")
+                    
             except Exception as e:
                 print(f"QMT 启动失败: {e}，API 将返回离线数据")
             
@@ -491,6 +520,72 @@ async def get_dates(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取交易日失败: {str(e)}")
+
+
+@app.get("/api/account", response_model=AccountResponse)
+async def get_account():
+    """
+    获取资金账户信息
+    """
+    if not _qmt_executor or not _qmt_executor.is_connected():
+        return AccountResponse(
+            available=0,
+            total=0,
+            market_value=0,
+            frozen=0,
+            connected=False,
+            message="QMT未连接"
+        )
+    
+    try:
+        account_info = _qmt_executor.get_account()
+        
+        if account_info:
+            return AccountResponse(
+                available=account_info.get('available', 0),
+                total=account_info.get('total', 0),
+                market_value=account_info.get('market_value', 0),
+                frozen=account_info.get('frozen', 0),
+                connected=True,
+                message="查询成功"
+            )
+        else:
+            return AccountResponse(
+                available=0,
+                total=0,
+                market_value=0,
+                frozen=0,
+                connected=True,
+                message="无法获取账户信息"
+            )
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取账户信息失败: {str(e)}")
+
+
+@app.get("/api/position", response_model=PositionResponse)
+async def get_position(code: Optional[str] = Query(None, description="股票代码")):
+    """
+    获取持仓信息
+    """
+    if not _qmt_executor or not _qmt_executor.is_connected():
+        return PositionResponse(
+            positions={},
+            connected=False,
+            message="QMT未连接"
+        )
+    
+    try:
+        positions = _qmt_executor.get_position(code)
+        
+        return PositionResponse(
+            positions=positions,
+            connected=True,
+            message=f"查询成功，共{len(positions)}只股票"
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取持仓失败: {str(e)}")
 
 
 # ==================== 启动入口 ====================
