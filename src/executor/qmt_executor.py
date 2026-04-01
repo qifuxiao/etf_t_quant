@@ -249,28 +249,30 @@ class QMTExecutor:
             time.sleep(0.5)
             
             # 重试获取最新行情（最多重试3次）
+            # 使用 get_full_tick() 获取实时行情（官方推荐方式）
             max_retries = 3
             retry_delay = 0.5
             
             for retry in range(max_retries):
-                # 获取最新行情
-                data = xtdata.get_market_data(
-                    field_list=["lastPrice", "open", "high", "low", "volume", "amount", 
-                               "change", "priceChange", "bid", "ask", "updateTime"],
-                    stock_list=[qmt_code],
-                    period="tick",
-                    count=1
-                )
+                # 获取实时行情 - 使用 get_full_tick (官方推荐方式)
+                tick_data = xtdata.get_full_tick([qmt_code])
                 
-                Logger.info(f"xtdata返回数据类型: {type(data)}")
-                if isinstance(data, dict):
-                    Logger.info(f"xtdata返回keys: {data.keys()}")
-                    if qmt_code in data:
-                        Logger.info(f"标的行情数据条数: {len(data[qmt_code])}")
+                Logger.info(f"get_full_tick返回数据类型: {type(tick_data)}")
+                if isinstance(tick_data, dict):
+                    Logger.info(f"get_full_tick返回keys: {tick_data.keys()}")
+                    if qmt_code in tick_data:
+                        Logger.info(f"标的行情数据: {tick_data[qmt_code]}")
                     else:
                         Logger.warning(f"标的 {qmt_code} 不在返回数据中")
 
-                tick = self._extract_tick(data, qmt_code)
+                # 提取 tick 数据
+                # get_full_tick 返回格式: { "SZ.300124": [{tick_dict}, ...] }
+                tick = None
+                if isinstance(tick_data, dict) and qmt_code in tick_data:
+                    ticks = tick_data[qmt_code]
+                    if isinstance(ticks, list) and ticks:
+                        tick = ticks[0]  # 取第一个tick
+                
                 if tick is not None:
                     Logger.info(f"行情获取成功 | 标的:{qmt_code} | 价格:{tick.get('lastPrice')}")
                     return {
@@ -285,7 +287,7 @@ class QMTExecutor:
                         "change_pct": self._safe_float(tick.get("change")) / 100 if tick.get("change") not in (None, "") else 0.0,
                         "bid": tick.get("bid", []),
                         "ask": tick.get("ask", []),
-                        "update_time": tick.get("updateTime", "")
+                        "update_time": tick.get("time") or tick.get("updateTime", "")
                     }
                 
                 # 重试前等待
