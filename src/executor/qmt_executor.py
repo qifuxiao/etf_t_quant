@@ -225,6 +225,16 @@ class QMTExecutor:
             
             Logger.info(f"获取实时行情 | qmt_code={qmt_code}")
             
+            # 先下载历史日K线数据（只有下载过历史数据后才能获取实时行情）
+            from datetime import datetime, timedelta
+            end_date = datetime.now().strftime("%Y%m%d")
+            start_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
+            try:
+                Logger.info(f"下载历史数据 | qmt_code={qmt_code} | {start_date}~{end_date}")
+                xtdata.download_history_data(qmt_code, "1d", start_date, end_date)
+            except Exception as e:
+                Logger.warning(f"历史数据下载失败（可能已存在）: {e}")
+            
             # 订阅行情
             xtdata.subscribe_quote(qmt_code)
             
