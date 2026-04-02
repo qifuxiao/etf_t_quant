@@ -69,16 +69,38 @@ class MarketIndex:
 class MarketModule:
     """行情模块"""
     
-    def __init__(self, config, qmt_executor=None):
+    def __init__(self, config, executor=None, executor_type: str = None):
         """
         初始化行情模块
         
         Args:
             config: 配置对象
-            qmt_executor: QMT执行器对象（用于获取行情）
+            executor: 执行器对象 (QMTExecutor 或 GMExecutor)
+            executor_type: 执行器类型 ('qmt' 或 'gm')，优先级高于 executor 参数
         """
         self.config = config
-        self.qmt = qmt_executor
+        self._executor = executor
+        
+        # 确定数据源类型
+        if executor_type:
+            self._data_source = executor_type
+        elif executor:
+            # 从 executor 类名推断
+            if 'GM' in executor.__class__.__name__.upper():
+                self._data_source = 'gm'
+            else:
+                self._data_source = 'qmt'
+        else:
+            # 默认使用配置中的数据源
+            self._data_source = config.data_source if hasattr(config, 'data_source') else 'gm'
+        
+        # 初始化数据执行器
+        if not self._executor and self._data_source == 'gm':
+            from .executor.gm_executor import GMExecutor
+            self._executor = GMExecutor(config)
+            self._executor.setup()
+        
+        Logger.info(f"行情模块初始化完成 | 标的:{config.stock_code} | 数据源:{self._data_source}")
         
         # 行情缓存
         self._quote_cache: Dict[str, QuoteData] = {}
@@ -105,8 +127,8 @@ class MarketModule:
         Args:
             stock_code: 股票代码
         """
-        if self.qmt:
-            self.qmt.subscribe(stock_code)
+        if self._executor:
+            self._executor.subscribe(stock_code)
             Logger.info(f"已订阅行情 | 标的:{stock_code}")
             
     def unsubscribe(self, stock_code: str):
@@ -116,8 +138,8 @@ class MarketModule:
         Args:
             stock_code: 股票代码
         """
-        if self.qmt:
-            self.qmt.unsubscribe(stock_code)
+        if self._executor:
+            self._executor.unsubscribe(stock_code)
             Logger.info(f"已取消订阅行情 | 标的:{stock_code}")
             
     def add_subscriber(self, callback: callable):
@@ -149,10 +171,10 @@ class MarketModule:
         Returns:
             行情数据
         """
-        # 如果有QMT接口，从QMT获取
-        if self.qmt:
+        # 从数据执行器获取
+        if self._executor:
             try:
-                quote_dict = self.qmt.get_quote(stock_code)
+                quote_dict = self._executor.get_quote(stock_code)
                 if quote_dict:
                     quote = self._parse_quote(quote_dict)
                     self._quote_cache[stock_code] = quote
@@ -226,10 +248,10 @@ class MarketModule:
         if cache_key in self._minute_data_cache:
             return self._minute_data_cache[cache_key]
             
-        # 从QMT获取分时数据
-        if self.qmt:
+        # 从数据执行器获取分时数据
+        if self._executor:
             try:
-                minute_list = self.qmt.get_minute_data(stock_code, today)
+                minute_list = self._executor.get_minute_data(stock_code, today)
                 if minute_list:
                     minute_data = [self._parse_minute_data(m) for m in minute_list]
                     self._minute_data_cache[cache_key] = minute_data
@@ -466,14 +488,14 @@ class MarketModule:
         # 缓存Key
         cache_key = f"{stock_code}_kline_{days}"
         
-        # 尝试从QMT获取
-        if self.qmt:
+        # 从数据执行器获取
+        if self._executor:
             try:
                 # 计算日期范围
                 end_date = datetime.now()
                 start_date = end_date - timedelta(days=days + 10)
                 
-                kline_list = self.qmt.get_kline(
+                kline_list = self._executor.get_kline(
                     stock_code, 
                     start_date.strftime("%Y%m%d"),
                     end_date.strftime("%Y%m%d")
@@ -522,9 +544,9 @@ class MarketModule:
         Returns:
             市场指数数据
         """
-        if self.qmt:
+        if self._executor:
             try:
-                index_dict = self.qmt.get_quote(index_code)
+                index_dict = self._executor.get_quote(index_code)
                 if index_dict:
                     self._market_index = MarketIndex(
                         index_code=index_code,

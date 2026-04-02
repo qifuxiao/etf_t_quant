@@ -79,9 +79,16 @@ class QMTExecutor:
         """
         启动 QMT 并连接
         """
-        from xtquant.xttrader import XtQuantTrader
-        from xtquant.xttype import StockAccount
-
+        # 尝试导入 xtquant，如果失败则记录警告
+        try:
+            from xtquant.xttrader import XtQuantTrader
+            from xtquant.xttype import StockAccount
+        except ImportError as e:
+            Logger.error(f"❌ xtquant 导入失败: {e} | Python版本可能不兼容")
+            Logger.warning("⚠️ 将以离线/模拟模式运行，部分功能可能不可用")
+            self._connected = False
+            return
+        
         # 获取QMT配置
         qmt_path = self.config.qmt_path if hasattr(self.config, 'qmt_path') else ''
         account_id = self.config.qmt_account if hasattr(self.config, 'qmt_account') else ''
@@ -300,6 +307,9 @@ class QMTExecutor:
             
             # 所有重试都失败
             Logger.warning(f"行情数据为空 | 标的:{qmt_code} | 已重试{max_retries}次")
+            return None
+        except ImportError as e:
+            Logger.error(f"xtquant 模块导入失败，可能是未安装或版本不兼容: {e}")
             return None
         except Exception as e:
             Logger.error(f"获取行情失败: {e}")

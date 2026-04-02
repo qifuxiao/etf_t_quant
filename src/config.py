@@ -80,6 +80,23 @@ class Config:
         """预留资金比例"""
         return float(self._config.get('capital', {}).get('reserve_ratio', 0.3))
     
+    # ==================== 数据源配置 ====================
+    @property
+    def data_source(self) -> str:
+        """数据源类型: gm (掘金API) 或 qmt (QMT行情)"""
+        return self._config.get('data_source', {}).get('type', 'gm')
+    
+    # ==================== GM API 配置 ====================
+    @property
+    def gm_token(self) -> str:
+        """GM API Token"""
+        return self._config.get('gm', {}).get('token', '')
+    
+    @property
+    def gm_server(self) -> str:
+        """GM API 服务器地址"""
+        return self._config.get('gm', {}).get('server', '127.0.0.1:7001')
+    
     # ==================== QMT配置 ====================
     @property
     def qmt_account(self) -> str:

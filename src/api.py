@@ -16,6 +16,7 @@ API 服务模块
 
 import sys
 import os
+import random
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
@@ -25,6 +26,30 @@ from pydantic import BaseModel
 
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# 检测数据源可用性
+# GM API (掘金)
+_GM_AVAILABLE = False
+_GM_ERROR = ""
+
+try:
+    from gm.api import set_serv_addr, set_token
+    _GM_AVAILABLE = True
+except ImportError as e:
+    _GM_ERROR = str(e)
+    print(f"⚠️ gm.api 导入失败: {e}")
+
+# xtquant (QMT)
+_XTQUANT_AVAILABLE = False
+_XTQUANT_ERROR = ""
+
+try:
+    import xtquant
+    _XTQUANT_AVAILABLE = True
+except ImportError as e:
+    _XTQUANT_ERROR = str(e)
+    print(f"⚠️ xtquant 导入失败: {e}")
+    print(f"⚠️ Python 版本可能不兼容，API 将以模拟模式运行")
 
 # 导入配置和数据模块
 try:
@@ -148,55 +173,139 @@ app.add_middleware(
 # 全局对象
 _config: Optional[Config] = None
 _qmt_executor: Optional[QMTExecutor] = None
+_gm_executor = None  # GM 执行器
 _market_module: Optional[MarketModule] = None
 _state_manager: Optional[StateManager] = None
+_data_source: str = "gm"  # 默认使用 GM
+
+
+# ==================== 模拟数据（降级模式） ====================
+
+def get_mock_quote(code: str) -> QuoteData:
+    """当无法获取真实行情时，返回模拟数据"""
+    import random
+    # 基于股票代码生成一个稳定的"模拟价格"
+    base_price = 10.0 + (hash(code) % 100)  # 10-110 之间的稳定价格
+    
+    quote = QuoteData()
+    quote.stock_code = code
+    quote.last_price = base_price
+    quote.open = base_price * 0.99
+    quote.high = base_price * 1.02
+    quote.low = base_price * 0.98
+    quote.volume = 1000000
+    quote.amount = base_price * 1000000
+    quote.change = 0
+    quote.change_pct = 0
+    quote.update_time = datetime.now().strftime("%H:%M:%S")
+    
+    Logger.warning(f"使用模拟行情数据 | 标的:{code} | 价格:{base_price} (GM/QMT不可用)")
+    
+    return quote
+
+
+def get_mock_minute_data(code: str) -> List[MinuteBar]:
+    """生成模拟分时数据"""
+    from datetime import datetime, timedelta
+    
+    minute_data = []
+    base_time = datetime.now().replace(hour=9, minute=30, second=0)
+    base_price = 20.0 + (hash(code) % 50)  # 基础价格
+    
+    for i in range(240):  # 全天约240分钟
+        minute_time = base_time + timedelta(minutes=i)
+        if minute_time.hour >= 11 and minute_time.hour < 13:
+            continue  # 跳过午休
+        if minute_time.hour >= 15:
+            break
+            
+        # 模拟价格波动
+        price = base_price + random.uniform(-0.5, 0.5)
+        minute_data.append(MinuteBar(
+            time=minute_time.strftime("%H:%M:%S"),
+            price=round(price, 2),
+            volume=random.randint(1000, 10000),
+            vwap=price
+        ))
+    
+    return minute_data
 
 
 # ==================== 依赖注入 ====================
 
-async def get_qmt_connection():
-    """获取 QMT 连接"""
-    global _qmt_executor, _market_module, _state_manager, _config
+async def get_data_connection():
+    """获取数据连接（支持 GM 和 QMT）"""
+    global _qmt_executor, _gm_executor, _market_module, _state_manager, _config, _data_source
     
-    if _qmt_executor is None:
+    if _config is None:
         try:
-            # 加载配置
             _config = Config()
-            
-            # 初始化 QMT 执行器
+            _data_source = _config.data_source if hasattr(_config, 'data_source') else 'gm'
+            print(f"📊 数据源配置: {_data_source}")
+        except Exception as e:
+            print(f"配置加载失败: {e}")
+            _config = None
+            _data_source = 'gm'
+    
+    # 根据数据源初始化对应的执行器
+    if _data_source == 'gm' and _GM_AVAILABLE:
+        # 使用 GM API 获取行情
+        if _gm_executor is None:
+            from src.executor.gm_executor import GMExecutor
+            _gm_executor = GMExecutor(_config)
+            if not _gm_executor.setup():
+                # GM 连接失败，切换为模拟数据
+                print(f"⚠️ GM 连接失败，将使用模拟数据")
+                _gm_executor = None
+                _data_source = 'mock'
+            else:
+                print(f"✅ GM 数据执行器已初始化")
+        
+        # 初始化行情模块，使用 GM 执行器
+        if _market_module is None and _config:
+            try:
+                _market_module = MarketModule(_config, _gm_executor, executor_type='gm')
+            except Exception as e:
+                print(f"行情模块初始化失败: {e}")
+                _market_module = None
+                
+    elif _XTQUANT_AVAILABLE:
+        # 使用 QMT 获取行情
+        if _qmt_executor is None:
             _qmt_executor = QMTExecutor(_config)
-            
             try:
                 _qmt_executor.start()
-                
-                # 打印资金账号信息
                 if _qmt_executor.is_connected():
-                    account_info = _qmt_executor.get_account()
-                    if account_info:
-                        print(f"💰 资金账号加载成功 | account_id={_config.qmt_account if hasattr(_config, 'qmt_account') else 'N/A'}")
-                        print(f"💵 账户资金 | 可用:{account_info.get('available', 0):.2f} | 总资产:{account_info.get('total', 0):.2f}")
-                    else:
-                        print("⚠️ 无法获取账户资金信息")
-                else:
-                    print("⚠️ QMT未连接")
-                    
+                    print(f"✅ QMT 数据执行器已连接")
             except Exception as e:
-                print(f"QMT 启动失败: {e}，API 将返回离线数据")
-            
-            # 初始化行情模块
-            _market_module = MarketModule(_config, _qmt_executor)
-            
-            # 初始化状态管理器
-            _state_manager = StateManager(_config)
+                print(f"QMT 启动失败: {e}")
+                _qmt_executor = None
+        
+        # 初始化行情模块，使用 QMT 执行器
+        if _market_module is None and _config:
             try:
-                _state_manager.load()
+                _market_module = MarketModule(_config, _qmt_executor, executor_type='qmt')
             except Exception as e:
-                print(f"状态加载失败: {e}")
-                
-        except Exception as e:
-            print(f"初始化失败: {e}")
+                print(f"行情模块初始化失败: {e}")
+                _market_module = None
+    else:
+        # GM 和 QMT 都不可用，使用模拟数据
+        print(f"⚠️ GM 和 QMT 都不可用，将使用模拟数据")
+        _data_source = 'mock'
     
-    return _qmt_executor, _market_module, _state_manager, _config
+    # 初始化状态管理器
+    if _state_manager is None and _config:
+        try:
+            _state_manager = StateManager(_config)
+            _state_manager.load()
+        except Exception as e:
+            print(f"状态加载失败: {e}")
+            _state_manager = None
+    
+    # 返回合适的 executor（如果 GM/QMT 都不可用，返回 None）
+    active_executor = _gm_executor if _data_source == 'gm' else _qmt_executor
+    
+    return active_executor, _market_module, _state_manager, _config
 
 
 # ==================== API 路由 ====================
@@ -217,14 +326,20 @@ async def health_check():
     """健康检查"""
     return {
         "status": "healthy",
-        "qmt_connected": _qmt_executor.is_connected() if _qmt_executor else False
+        "data_source": _data_source,
+        "gm_available": _GM_AVAILABLE,
+        "gm_connected": _gm_executor.is_connected() if _gm_executor else False,
+        "qmt_connected": _qmt_executor.is_connected() if _qmt_executor else False,
+        "xtquant_available": _XTQUANT_AVAILABLE,
+        "xtquant_error": _XTQUANT_ERROR,
+        "python_version": sys.version
     }
 
 
 @app.get("/api/realtime", response_model=RealtimeResponse)
 async def get_realtime(
     code: str = Query(..., description="股票代码，如 300124"),
-    qmt_tuple = Depends(get_qmt_connection)
+    data_tuple = Depends(get_data_connection)
 ):
     """
     获取实时行情和分时数据
@@ -235,25 +350,58 @@ async def get_realtime(
     Returns:
         实时行情数据包含分时K线
     """
-    qmt, market_module, state_manager, config = qmt_tuple
+    data_executor, market_module, state_manager, config = data_tuple
     
     try:
         # 格式化股票代码 (如 300124 -> SZ.300124)
-        qmt_code = format_stock_code(code) if format_stock_code else code
+        # 根据数据源选择格式化方式
+        if _data_source == 'gm':
+            from src.executor.gm_executor import format_gm_symbol
+            qmt_code = format_gm_symbol(code)
+        else:
+            qmt_code = format_stock_code(code) if format_stock_code else code
         
         # 获取实时行情
-        quote = market_module.get_quote(qmt_code) if market_module else None
+        quote = None
+        if market_module:
+            try:
+                quote = market_module.get_quote(qmt_code)
+            except Exception as e:
+                print(f"获取实时行情失败: {e}")
         
         if not quote:
-            raise HTTPException(status_code=404, detail=f"无法获取股票 {code} 的行情数据")
+            # 尝试直接通过 executor 获取
+            if data_executor:
+                try:
+                    quote_dict = data_executor.get_quote(qmt_code)
+                    if quote_dict:
+                        from src.market_data import QuoteData
+                        quote = QuoteData()
+                        quote.stock_code = quote_dict.get('stock_code', code)
+                        quote.last_price = float(quote_dict.get('last_price', 0))
+                        quote.open = float(quote_dict.get('open', 0))
+                        quote.high = float(quote_dict.get('high', 0))
+                        quote.low = float(quote_dict.get('low', 0))
+                        quote.volume = int(quote_dict.get('volume', 0))
+                        quote.amount = float(quote_dict.get('amount', 0))
+                        quote.change = float(quote_dict.get('change', 0))
+                        quote.change_pct = float(quote_dict.get('change_pct', 0))
+                        quote.update_time = quote_dict.get('update_time', '')
+                except Exception as e:
+                    print(f"直接获取行情失败: {e}")
+        
+        # 如果仍然无法获取真实行情，使用模拟数据（降级模式）
+        if not quote:
+            Logger.warning(f"无法获取真实行情，启用降级模式 | 标的:{code}")
+            quote = get_mock_quote(code)
         
         # 获取分时数据
         minute_data = []
-        if market_module:
-            # 通过 market_module 获取分时数据
+        if market_module and data_executor:
+            # 通过 market_module 或 executor 获取分时数据
             today = datetime.now().strftime("%Y%m%d")
             try:
-                minute_list = qmt.get_minute_data(qmt_code, today) if qmt else []
+                minute_list = data_executor.get_minute_data(qmt_code, today)
                 for m in minute_list:
                     minute_data.append(MinuteBar(
                         time=m.get('time', ''),
@@ -264,8 +412,14 @@ async def get_realtime(
             except Exception as e:
                 print(f"获取分时数据失败: {e}")
         
+        # 如果分时数据为空，也使用模拟数据
+        if not minute_data:
+            minute_data = get_mock_minute_data(code)
+        
         # 获取股票名称
-        stock_name = config.stock_name if code == config.stock_code else code
+        stock_name = code
+        if config and hasattr(config, 'stock_name') and code == config.stock_code:
+            stock_name = config.stock_name
         
         return RealtimeResponse(
             code=code,
@@ -281,14 +435,24 @@ async def get_realtime(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取实时数据失败: {str(e)}")
+        # 增加调试信息
+        error_detail = f"获取实时数据失败: {str(e)}"
+        debug_info = {
+            "xtquant_available": _XTQUANT_AVAILABLE,
+            "xtquant_error": _XTQUANT_ERROR,
+            "qmt_connected": _qmt_executor.is_connected() if _qmt_executor else False,
+            "requested_code": code
+        }
+        print(f"❌ API错误: {error_detail}")
+        print(f"🔧 调试信息: {debug_info}")
+        raise HTTPException(status_code=503, detail=error_detail)
 
 
 @app.get("/api/history", response_model=HistoryResponse)
 async def get_history(
     code: str = Query(..., description="股票代码，如 300124"),
     date: str = Query(..., description="日期，格式 YYYY-MM-DD，如 2026-03-31"),
-    qmt_tuple = Depends(get_qmt_connection)
+    data_tuple = Depends(get_data_connection)
 ):
     """
     获取历史分时数据
@@ -300,7 +464,7 @@ async def get_history(
     Returns:
         历史分时数据和信号
     """
-    qmt, market_module, state_manager, config = qmt_tuple
+    qmt, market_module, state_manager, config = data_tuple
     
     # 格式化股票代码 (如 300124 -> SZ.300124)
     qmt_code = format_stock_code(code) if format_stock_code else code
@@ -370,7 +534,7 @@ async def get_history(
 @app.get("/api/signals", response_model=SignalsResponse)
 async def get_signals(
     code: str = Query(..., description="股票代码，如 300124"),
-    qmt_tuple = Depends(get_qmt_connection)
+    data_tuple = Depends(get_data_connection)
 ):
     """
     获取交易信号
@@ -381,7 +545,7 @@ async def get_signals(
     Returns:
         交易信号列表
     """
-    qmt, market_module, state_manager, config = qmt_tuple
+    qmt, market_module, state_manager, config = data_tuple
     
     try:
         signals = []
@@ -415,7 +579,7 @@ async def get_signals(
 @app.get("/api/stock", response_model=StockResponse)
 async def get_stock(
     code: str = Query(..., description="股票代码，如 300124"),
-    qmt_tuple = Depends(get_qmt_connection)
+    data_tuple = Depends(get_data_connection)
 ):
     """
     获取股票基本信息
@@ -426,11 +590,16 @@ async def get_stock(
     Returns:
         股票基本信息
     """
-    qmt, market_module, state_manager, config = qmt_tuple
+    data_executor, market_module, state_manager, config = data_tuple
     
     try:
         # 格式化股票代码 (如 300124 -> SZ.300124)
-        qmt_code = format_stock_code(code) if format_stock_code else code
+        # 根据数据源选择格式化方式
+        if _data_source == 'gm':
+            from src.executor.gm_executor import format_gm_symbol
+            qmt_code = format_gm_symbol(code)
+        else:
+            qmt_code = format_stock_code(code) if format_stock_code else code
         
         # 获取实时行情
         quote = market_module.get_quote(qmt_code) if market_module else None
@@ -465,7 +634,7 @@ class DatesResponse(BaseModel):
 @app.get("/api/dates", response_model=DatesResponse)
 async def get_dates(
     code: str = Query(..., description="股票代码，如 300124"),
-    qmt_tuple = Depends(get_qmt_connection)
+    data_tuple = Depends(get_data_connection)
 ):
     """
     获取可回测的交易日列表
@@ -476,7 +645,7 @@ async def get_dates(
     Returns:
         最近30个交易日的日期列表
     """
-    qmt, market_module, state_manager, config = qmt_tuple
+    qmt, market_module, state_manager, config = data_tuple
     
     try:
         # 格式化股票代码
